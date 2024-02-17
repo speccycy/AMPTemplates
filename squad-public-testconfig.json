@@ -117,6 +117,7 @@
         "IncludeInCommandLine": false,
         "DefaultValue": "LayerList",
         "EnumValues": {
+            "LayerVote": "LayerVote",
             "LevelList": "LevelList",
             "LayerList": "LayerList",
             "LevelList_Randomized": "LevelList_Randomized",
