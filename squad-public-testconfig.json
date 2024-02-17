@@ -115,7 +115,7 @@
         "IsFlagArgument": false,
         "ParamFieldName": "MapRotationMode",
         "IncludeInCommandLine": false,
-        "DefaultValue": "LayerList",
+        "DefaultValue": "LayerVote",
         "EnumValues": {
             "LayerVote": "LayerVote",
             "LevelList": "LevelList",
