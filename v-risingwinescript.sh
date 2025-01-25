@@ -4,7 +4,7 @@ SCRIPT_NAME=$(echo \"$0\" | xargs readlink -f)
 SCRIPTDIR=$(dirname "$SCRIPT_NAME")
 
 exec 6>display.log
-/usr/bin/Xvfb -displayfd 6 &
+/usr/bin/Xvfb -displayfd 6 -nolisten tcp -nolisten unix &
 XVFB_PID=$!
 while [[ ! -s display.log ]]; do
   sleep 1
@@ -18,7 +18,8 @@ export WINEARCH=win64
 export WINEDEBUG=fixme-all
 export DISPLAY=:$DPY_NUM
 
-wget -q -N https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks
+[[ -f winetricks ]] && rm -f winetricks
+wget -q https://raw.githubusercontent.com/Winetricks/winetricks/refs/tags/20250102/src/winetricks
 chmod +x winetricks
 wget -q -O $WINEPREFIX/mono.msi https://dl.winehq.org/wine/wine-mono/8.0.0/wine-mono-8.0.0-x86.msi
 
