@@ -118,6 +118,7 @@
         "InputType": "text",
         "IsFlagArgument": false,
         "ParamFieldName": "/ServerSettings/property[@name='ServerPort']/@value",
+        "ExcludeFromImport": true,
         "IncludeInCommandLine": false,
         "DefaultValue": "26900",
         "EnumValues": {},
@@ -266,6 +267,7 @@
         "IsFlagArgument": false,
         "ParamFieldName": "/ServerSettings/property[@name='ControlPanelPort']/@value | /ServerSettings/property[@name='WebDashboardPort']/@value",
         "IncludeInCommandLine": false,
+        "ExcludeFromImport": true,
         "DefaultValue": "8080",
         "EnumValues": {},
         "Hidden": true
@@ -342,6 +344,7 @@
         "IsFlagArgument": false,
         "ParamFieldName": "/ServerSettings/property[@name='TelnetPort']/@value",
         "IncludeInCommandLine": false,
+        "ExcludeFromImport": true,
         "DefaultValue": "8081",
         "EnumValues": {},
         "Hidden": true
@@ -357,6 +360,7 @@
         "IsFlagArgument": false,
         "ParamFieldName": "/ServerSettings/property[@name='TelnetPassword']/@value",
         "IncludeInCommandLine": false,
+        "ExcludeFromImport": true,
         "EnumValues": {}
     },
     {
@@ -1492,6 +1496,7 @@
         "EnumValues": {
             "public": "Public (default)",
             "latest_experimental": "Experimental",
+            "v1.3": "Version 1.3",
             "v1.2": "Version 1.2",
             "v1.1": "Version 1.1",
             "v1.0": "Version 1.0",
