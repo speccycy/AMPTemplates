@@ -1496,6 +1496,7 @@
         "EnumValues": {
             "public": "Public (default)",
             "latest_experimental": "Experimental",
+            "v1.4": "Version 1.4",
             "v1.3": "Version 1.3",
             "v1.2": "Version 1.2",
             "v1.1": "Version 1.1",
@@ -1544,10 +1545,11 @@
         "DefaultValue": "",
         "EnumValues": {
             "": "Standard server (default)",
-            "-EACEnabled=false -RecipeFilter={{RecipeFilter}} -StarterQuestEnabled={{StarterQuestEnabled}} -WanderingHordeFrequency={{WanderingHordeFrequency}} -WanderingHordeRange={{WanderingHordeRange}} -WanderingHordeEnemyCount={{WanderingHordeEnemyCount}} -WanderingHordeEnemyRange={{WanderingHordeEnemyRange}} -DeathPenalty={{UndeadLegacyDeathPenalty}} -POITierLootScale={{POITierLootScale}} ": "Undead Legacy Stable mod (Alpha 20.7 version)",
-            "-RecipeFilter={{RecipeFilter}} -StarterQuestEnabled={{StarterQuestEnabled}} -WanderingHordeFrequency={{WanderingHordeFrequency}} -WanderingHordeRange={{WanderingHordeRange}} -WanderingHordeEnemyCount={{WanderingHordeEnemyCount}} -WanderingHordeEnemyRange={{WanderingHordeEnemyRange}} -DeathPenalty={{UndeadLegacyDeathPenalty}} -POITierLootScale={{POITierLootScale}} -EACEnabled=false ": "Undead Legacy Experimental mod (Alpha 20.7 version)",
-            "-EACEnabled=false ": "Darkness Falls mod (Alpha 20.7 version)",
-            "-EACEnabled=false  ": "Darkness Falls mod (Alpha 21.2 version)"
+            "-EACEnabled=false -RecipeFilter={{RecipeFilter}} -StarterQuestEnabled={{StarterQuestEnabled}} -WanderingHordeFrequency={{WanderingHordeFrequency}} -WanderingHordeRange={{WanderingHordeRange}} -WanderingHordeEnemyCount={{WanderingHordeEnemyCount}} -WanderingHordeEnemyRange={{WanderingHordeEnemyRange}} -DeathPenalty={{UndeadLegacyDeathPenalty}} -POITierLootScale={{POITierLootScale}} ": "Undead Legacy Stable mod (Alpha 20.7 build)",
+            "-RecipeFilter={{RecipeFilter}} -StarterQuestEnabled={{StarterQuestEnabled}} -WanderingHordeFrequency={{WanderingHordeFrequency}} -WanderingHordeRange={{WanderingHordeRange}} -WanderingHordeEnemyCount={{WanderingHordeEnemyCount}} -WanderingHordeEnemyRange={{WanderingHordeEnemyRange}} -DeathPenalty={{UndeadLegacyDeathPenalty}} -POITierLootScale={{POITierLootScale}} -EACEnabled=false ": "Undead Legacy Experimental mod (Alpha 20.7 build)",
+            "-EACEnabled=false ": "Darkness Falls mod (Alpha 20.7 build)",
+            "-EACEnabled=false  ": "Darkness Falls V5 mod (Alpha 21.2 build)",
+            "-EACEnabled=false   ": "Darkness Falls V6 mod (Version 1.4 build)"
         }
     },
     {

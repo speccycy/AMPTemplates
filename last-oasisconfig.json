@@ -10,6 +10,7 @@
         "IsFlagArgument": false,
         "ParamFieldName": "ProviderKey",
         "IncludeInCommandLine": true,
+        "Required": true,
         "DefaultValue": "",
         "EnumValues": {}
     },
@@ -24,6 +25,7 @@
         "IsFlagArgument": false,
         "ParamFieldName": "CustomerKey",
         "IncludeInCommandLine": true,
+        "Required": true,
         "DefaultValue": "",
         "EnumValues": {}
     },
@@ -38,6 +40,7 @@
         "IsFlagArgument": false,
         "ParamFieldName": "identifier",
         "IncludeInCommandLine": true,
+        "Required": true,
         "DefaultValue": "",
         "EnumValues": {}
     },
@@ -84,7 +87,7 @@
         "IsFlagArgument": false,
         "ParamFieldName": "noupnp",
         "IncludeInCommandLine": false,
-        "DefaultValue": "",
+        "DefaultValue": "-noupnp ",
         "EnumValues": {
             "False": "",
             "True": "-noupnp "
@@ -106,6 +109,34 @@
             "backend-production.last-oasis.com": "Production backend (default)",
             "classic-backend.last-oasis.com": "Classic S4 backend"
         }
+    },
+    {
+        "DisplayName": "Connection Address Selection Mode",
+        "Category": "Last Oasis:stadia_controller",
+        "Subcategory": "Server:dns:1",
+        "Description": "Sets how the connection address advertised for the server is set. \"Server IP address\" = the server's IP address, \"Automatic public IP address\" = the public IP address automatically selected by AMP, \"Manual address\" = the address set under Manual Connection Address",
+        "Keywords": "override,connection,address,mode,overrideconnectionaddress,external,public,ip",
+        "FieldName": "OverrideConnectionAddress",
+        "InputType": "enum",
+        "ParamFieldName": "OverrideConnectionAddress",
+        "DefaultValue": "-OverrideConnectionAddress",
+        "EnumValues": {
+            "-OverrideConnectionAddress": "Server IP address (default)",
+            "-OverrideConnectionAddress={{$ExternalIP}}": "Automatic public IP address",
+            "-OverrideConnectionAddress={{$ManualConnectionAddress}}": "Manual address"
+        }
+    },
+    {
+        "DisplayName": "Manual Connection Address",
+        "Category": "Last Oasis:stadia_controller",
+        "Subcategory": "Server:dns:1",
+        "Description": "Sets the connection address advertised for the server, if \"Manual address\" is selected as the Connection Address Selection Mode",
+        "Keywords": "manual,connection,address,public,local,ip",
+        "FieldName": "ManualConnectionAddress",
+        "InputType": "text",
+        "ParamFieldName": "ManualConnectionAddress",
+        "DefaultValue": "",
+        "EnumValues": {}
     },
     {
         "DisplayName": "Server Branch",

@@ -13,5 +13,21 @@
         "UpdateSource": "SteamCMD",
         "UpdateSourceData": "1007",
         "UpdateSourceTarget": "{{$FullBaseDir}}Mist/Binaries/Win64"
+    },
+    {
+        "UpdateStageName": "Create steam_appid.txt File",
+        "UpdateSourcePlatform": "Linux",
+        "UpdateSource": "CreateFile",
+        "UpdateSourceData": "903950",
+        "UpdateSourceArgs": "{{$FullBaseDir}}Mist/Binaries/Linux/steam_appid.txt",
+        "OverwriteExistingFiles": true
+    },
+    {
+        "UpdateStageName": "Create steam_appid.txt File",
+        "UpdateSourcePlatform": "Windows",
+        "UpdateSource": "CreateFile",
+        "UpdateSourceData": "903950",
+        "UpdateSourceArgs": "{{$FullBaseDir}}Mist/Binaries/Win64/steam_appid.txt",
+        "OverwriteExistingFiles": true
     }
 ]
