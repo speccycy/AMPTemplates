@@ -45,7 +45,7 @@
         "FieldName": "$MaxUsers",
         "InputType": "number",
         "MinValue": "20",
-        "MaxValue": "100",
+        "MaxValue": "128",
         "ParamFieldName": "General.scum.MaxPlayers",
         "DefaultValue": "64",
         "Placeholder": "64",
