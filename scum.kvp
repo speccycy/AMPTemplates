@@ -24,7 +24,7 @@ Meta.NoCommercialUsage=False
 Meta.ConfigVersion=3
 Meta.ReleaseNotes=
 Meta.BreakingReleaseNotes=
-Meta.AppConfigId=721f4476-0b57-4765-9f36-21cbae019e46
+Meta.AppConfigId=f47281e0-63d1-4ece-b732-d1b24116cc9a
 Meta.ImportableExtensions=[".ini"]
 Meta.AppIsMultiIPAware=False
 App.DisplayName=SCUM
@@ -44,7 +44,7 @@ App.CommandLineParameterFormat=-{0}={1}
 App.CommandLineParameterDelimiter= 
 App.ExitMethod=OS_CLOSE
 App.ExitMethodWindows=None
-App.ExitTimeout=30
+App.ExitTimeout=60
 App.ExitString=stop
 App.ExitFile=app_exit.lck
 App.HasWriteableConsole=False
