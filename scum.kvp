@@ -43,7 +43,6 @@ App.EnvironmentVariables={"SteamAppId":"513710","STEAM_COMPAT_DATA_PATH":"{{$Ful
 App.CommandLineParameterFormat=-{0}={1}
 App.CommandLineParameterDelimiter= 
 App.ExitMethod=OS_CLOSE
-App.ExitMethodWindows=None
 App.ExitTimeout=60
 App.ExitString=stop
 App.ExitFile=app_exit.lck
