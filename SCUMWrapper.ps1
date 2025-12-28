@@ -3,78 +3,63 @@ param(
     $ScriptArgs
 )
 
-# Shared shutdown logic
-$script:ShuttingDown = $false
-function Stop-ServerGracefully($proc) {
-    if ($script:ShuttingDown) { return }
-    $script:ShuttingDown = $true
-    
-    Write-Host "[Wrapper] Shutdown signal received. Sending CloseMainWindow..."
-    try {
-        $proc.CloseMainWindow() | Out-Null
-    } catch {
-        Write-Host "[Wrapper] Error closing main window: $_"
-    }
-    
-    $proc.WaitForExit(60000)
-    if (!$proc.HasExited) {
-        Write-Host "[Wrapper] Timed out. Killing process..."
-        $proc.Kill()
-    } else {
-        Write-Host "[Wrapper] Server shut down gracefully."
-    }
-}
-
-# Trap Ctrl+C (SIGINT)
-[Console]::TreatControlCAsInput = $false
-[Console]::CancelKeyPress += { 
-    $_.Cancel = $true # Prevent immediate script termination
-    Write-Host "[Wrapper] Caught Ctrl+C."
-    Stop-ServerGracefully $script:p 
-}
-
 $ExePath = Join-Path $PSScriptRoot "SCUMServer.exe"
-Write-Host "[Wrapper] Starting SCUM Server from: $ExePath"
-Write-Host "[Wrapper] Arguments: $ScriptArgs"
+$p = $null
 
-$StartInfo = New-Object System.Diagnostics.ProcessStartInfo
-$StartInfo.FileName = $ExePath
-$StartInfo.Arguments = "$ScriptArgs"
-$StartInfo.UseShellExecute = $false
-$StartInfo.RedirectStandardInput = $false
-$StartInfo.RedirectStandardOutput = $true
-$StartInfo.RedirectStandardError = $true
-$StartInfo.CreateNoWindow = $false
+try {
+    Write-Host "[Wrapper] Starting SCUM Server from: $ExePath"
+    Write-Host "[Wrapper] Arguments: $ScriptArgs"
 
-$script:p = New-Object System.Diagnostics.Process
-$script:p.StartInfo = $StartInfo
-
-$Action = { if (![string]::IsNullOrEmpty($Event.SourceEventArgs.Data)) { [Console]::Out.WriteLine($Event.SourceEventArgs.Data) } }
-$ErrorAction = { if (![string]::IsNullOrEmpty($Event.SourceEventArgs.Data)) { [Console]::Error.WriteLine($Event.SourceEventArgs.Data) } }
-
-Register-ObjectEvent -InputObject $script:p -EventName OutputDataReceived -Action $Action | Out-Null
-Register-ObjectEvent -InputObject $script:p -EventName ErrorDataReceived -Action $ErrorAction | Out-Null
-
-if (!$script:p.Start()) { Write-Host "[Wrapper] Failed start."; exit 1 }
-
-$script:p.BeginOutputReadLine()
-$script:p.BeginErrorReadLine()
-Write-Host "[Wrapper] SCUM Server started. PID: $($script:p.Id)."
-
-# Main Loop - Read Async STDIN as fallback + Keep script alive
-$Reader = [System.Console]::In
-$InputTask = $Reader.ReadLineAsync()
-
-while (!$script:p.HasExited -and !$script:ShuttingDown) {
-    if ($InputTask.IsCompleted) {
-        $Command = $InputTask.Result
-        if ($Command -eq "stop") { Stop-ServerGracefully $script:p; break }
-        $InputTask = $Reader.ReadLineAsync()
+    # Start SCUM
+    # Redirect output just to keep console clean, or let it flow if needed.
+    # Since we use TailLogFile, we don't strictly need to see output, 
+    # but having it is good for debugging. 
+    # We will NOT redirect here to ensure maximum compatibility with the Console environment.
+    $p = Start-Process -FilePath $ExePath -ArgumentList $ScriptArgs -PassThru -NoNewWindow
+    
+    if (!$p) {
+        Write-Host "[Wrapper] Failed to start process."
+        exit 1
     }
-    Start-Sleep -Milliseconds 250
-}
 
-if ($script:p.HasExited) {
-    Write-Host "[Wrapper] Process exited code: $($script:p.ExitCode)"
-    exit $script:p.ExitCode
+    Write-Host "[Wrapper] SCUM Server started. PID: $($p.Id)."
+    Write-Host "[Wrapper] Waiting for process exit or Ctrl+C signal..."
+
+    # Main Wait Loop (Blocking is fine here as we rely on Signal interruption)
+    while (!$p.HasExited) {
+        Start-Sleep -Milliseconds 500
+    }
+}
+finally {
+    # This block executes when:
+    # 1. The loop finishes naturally (Game stopped / Crashed)
+    # 2. The script is terminated by Ctrl+C (AMP Shutdown)
+    
+    Write-Host "[Wrapper] Finally block triggered."
+    
+    if ($p -and !$p.HasExited) {
+        Write-Host "[Wrapper] Child process still running. Triggering Graceful Shutdown (CloseMainWindow)..."
+        
+        try {
+            $p.CloseMainWindow() | Out-Null
+        } catch {
+            Write-Host "[Wrapper] Error triggering CloseMainWindow: $_"
+        }
+        
+        # Give it time to save and exit
+        $TimeoutSeconds = 60
+        Write-Host "[Wrapper] Waiting up to $TimeoutSeconds seconds for exit..."
+        
+        # WaitForExit loop to avoid hanging indefinitely if it ignores us
+        $DidExit = $p.WaitForExit($TimeoutSeconds * 1000)
+        
+        if (!$DidExit) {
+            Write-Host "[Wrapper] Timed out. Force killing..."
+            $p.Kill()
+        } else {
+            Write-Host "[Wrapper] Process exited gracefully."
+        }
+    } else {
+        Write-Host "[Wrapper] Child process already exited."
+    }
 }
