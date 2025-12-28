@@ -31,21 +31,18 @@ App.DisplayName=SCUM
 App.RootDir=./scum/
 App.BaseDirectory=./scum/3792580/
 App.SteamWorkshopDownloadLocation=
-App.ExecutableWin=3792580\SCUM\Binaries\Win64\SCUMServer.exe
+App.ExecutableWin=C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
 App.ExecutableLinux=.proton/proton
 App.WorkingDir=3792580
 App.LinuxCommandLineArgs=runinprefix "{{$FullBaseDir}}SCUM/Binaries/Win64/SCUMServer.exe"
 App.WindowsCommandLineArgs=
-App.CommandLineArgs={{$PlatformArgs}} SCUM -Port={{$ServerPort}} -QueryPort={{$QueryPort}} -MaxPlayers={{$MaxUsers}} {{nobattleye}}{{$FormattedArgs}} -log
+App.CommandLineArgs=-ExecutionPolicy Bypass -File "SCUM\Binaries\Win64\SCUMWrapper.ps1" {{$PlatformArgs}} SCUM -Port={{$ServerPort}} -QueryPort={{$QueryPort}} -MaxPlayers={{$MaxUsers}} -log {{nobattleye}}{{$FormattedArgs}}
 App.UseLinuxIOREDIR=False
 App.AppSettings={}
 App.EnvironmentVariables={"SteamAppId":"513710","STEAM_COMPAT_DATA_PATH":"{{$FullRootDir}}.proton/compatdata","STEAM_COMPAT_CLIENT_INSTALL_PATH":"{{$FullBaseDir}}.steam/steam","HOME":"{{$FullBaseDir}}","XDG_RUNTIME_DIR":"/tmp"}
-App.CommandLineParameterFormat=-{0}={1}
-App.CommandLineParameterDelimiter= 
 App.ExitMethod=OS_CLOSE
 App.ExitMethodWindows=CtrlC
 App.ExitTimeout=60
-App.ExitString=stop
 App.ExitFile=app_exit.lck
 App.HasWriteableConsole=True
 App.HasReadableConsole=True
@@ -90,7 +87,7 @@ App.SmartExcludeExemptions=["*.cfg","*.conf","*.config","*.ini","*.json","*.xml"
 App.SmartExcludeSupported=True
 App.DumpFullChildProcessTree=False
 App.MonitorChildProcess=False
-App.MonitorChildProcessName=
+App.MonitorChildProcessName=^.*{{$WineBaseDir}}SCUM\\Binaries\\Win64\\SCUMServer\.exe.*-Port={{$ServerPort}}.*$
 App.MonitorDirectChildOnly=False
 App.SupportsUniversalSleep=False
 App.WakeupMode=Any
