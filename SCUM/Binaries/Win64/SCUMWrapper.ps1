@@ -3,16 +3,20 @@ param(
     $ScriptArgs
 )
 
-# PowerShell wrapper for SCUM Server to enable graceful shutdown via Ctrl+C
-# This script sends proper console control events to allow database saving
+# SCUM Server Graceful Shutdown Wrapper v2.0
+# Handles AMP's OS_CLOSE signal and forwards graceful shutdown to SCUM
 
-# Add Windows API signatures for sending Ctrl+C
+Write-Host "[Wrapper] =================================================="
+Write-Host "[Wrapper] SCUM Server Graceful Shutdown Wrapper v2.0"
+Write-Host "[Wrapper] =================================================="
+
+$ExePath = Join-Path $PSScriptRoot "SCUMServer.exe"
+$process = $null
+
+# Add Windows API for sending Ctrl+C
 $signature = @'
 [DllImport("kernel32.dll", SetLastError = true)]
 public static extern bool GenerateConsoleCtrlEvent(uint dwCtrlEvent, uint dwProcessGroupId);
-
-[DllImport("kernel32.dll", SetLastError = true)]
-public static extern bool SetConsoleCtrlHandler(IntPtr HandlerRoutine, bool Add);
 
 [DllImport("kernel32.dll", SetLastError = true)]
 public static extern bool AttachConsole(uint dwProcessId);
@@ -21,195 +25,136 @@ public static extern bool AttachConsole(uint dwProcessId);
 public static extern bool FreeConsole();
 
 [DllImport("kernel32.dll", SetLastError = true)]
-public static extern bool AllocConsole();
+public static extern bool SetConsoleCtrlHandler(IntPtr HandlerRoutine, bool Add);
 '@
 
 try {
-    Add-Type -MemberDefinition $signature -Name 'ConsoleControl' -Namespace 'Win32' -ErrorAction Stop
-    Write-Host "[Wrapper] Console control API loaded."
+    Add-Type -MemberDefinition $signature -Name 'WinAPI' -Namespace 'Kernel32' -ErrorAction Stop | Out-Null
+    $apiLoaded = $true
 }
 catch {
-    Write-Host "[Wrapper] Warning: Could not load console control API. Fallback methods will be used."
+    $apiLoaded = $false
 }
 
-$ExePath = Join-Path $PSScriptRoot "SCUMServer.exe"
-$process = $null
-$isShuttingDown = $false
-
-# Graceful shutdown function
-function Send-GracefulShutdown {
-    param($proc)
+function Send-CtrlC {
+    param([System.Diagnostics.Process]$TargetProcess)
     
-    if ($isShuttingDown) {
-        Write-Host "[Wrapper] Already shutting down..."
-        return
+    if (!$TargetProcess -or $TargetProcess.HasExited) {
+        return $false
     }
     
-    $script:isShuttingDown = $true
-    Write-Host "[Wrapper] Initiating graceful shutdown..."
+    Write-Host "[Wrapper] Sending Ctrl+C to PID $($TargetProcess.Id)..."
     
-    if (($null -eq $proc) -or $proc.HasExited) {
-        Write-Host "[Wrapper] Process already exited."
-        return
-    }
-
-    # Method 1: Try using GenerateConsoleCtrlEvent if API is loaded
-    $hasConsoleControlAPI = $false
-    try {
-        $hasConsoleControlAPI = ($null -ne ([System.Management.Automation.PSTypeName]'Win32.ConsoleControl').Type)
-    }
-    catch {
-        $hasConsoleControlAPI = $false
-    }
-    
-    if ($hasConsoleControlAPI) {
-        Write-Host "[Wrapper] Attempting Ctrl+C via GenerateConsoleCtrlEvent..."
-        
+    if ($apiLoaded) {
         try {
-            # Detach from our console
-            [Win32.ConsoleControl]::FreeConsole() | Out-Null
+            # Method 1: Use Windows API
+            [Kernel32.WinAPI]::FreeConsole() | Out-Null
             
-            # Attach to child process console
-            if ([Win32.ConsoleControl]::AttachConsole($proc.Id)) {
-                Write-Host "[Wrapper] Attached to process console."
-                
-                # Disable Ctrl+C handling in this script so we don't terminate ourselves
-                [Win32.ConsoleControl]::SetConsoleCtrlHandler([IntPtr]::Zero, $true) | Out-Null
-                
-                # Send Ctrl+C event (CTRL_C_EVENT = 0)
-                $result = [Win32.ConsoleControl]::GenerateConsoleCtrlEvent(0, 0)
+            if ([Kernel32.WinAPI]::AttachConsole($TargetProcess.Id)) {
+                [Kernel32.WinAPI]::SetConsoleCtrlHandler([IntPtr]::Zero, $true) | Out-Null
+                $result = [Kernel32.WinAPI]::GenerateConsoleCtrlEvent(0, 0)
+                Start-Sleep -Milliseconds 100
+                [Kernel32.WinAPI]::FreeConsole() | Out-Null
+                [Kernel32.WinAPI]::SetConsoleCtrlHandler([IntPtr]::Zero, $false) | Out-Null
                 
                 if ($result) {
-                    Write-Host "[Wrapper] Ctrl+C signal sent successfully."
+                    Write-Host "[Wrapper] Ctrl+C sent via API"
+                    return $true
                 }
-                else {
-                    Write-Host "[Wrapper] Failed to send Ctrl+C signal."
-                }
-                
-                Start-Sleep -Milliseconds 500
-                
-                # Detach and restore our console
-                [Win32.ConsoleControl]::FreeConsole() | Out-Null
-                [Win32.ConsoleControl]::AllocConsole() | Out-Null
-                [Win32.ConsoleControl]::SetConsoleCtrlHandler([IntPtr]::Zero, $false) | Out-Null
-            }
-            else {
-                Write-Host "[Wrapper] Could not attach to process console."
             }
         }
         catch {
-            Write-Host "[Wrapper] Error sending Ctrl+C: $_"
+            Write-Host "[Wrapper] API method failed: $_"
         }
     }
     
-    # Method 2: Fallback to CloseMainWindow (less reliable for console apps)
-    if (!$proc.HasExited) {
-        Write-Host "[Wrapper] Trying CloseMainWindow as fallback..."
-        try {
-            $proc.CloseMainWindow() | Out-Null
-        }
-        catch {
-            Write-Host "[Wrapper] CloseMainWindow failed: $_"
-        }
+    # Method 2: CloseMainWindow fallback
+    Write-Host "[Wrapper] Trying CloseMainWindow..."
+    try {
+        return $TargetProcess.CloseMainWindow()
     }
-    
-    # Wait for graceful exit
-    $TimeoutSeconds = 60
-    Write-Host "[Wrapper] Waiting up to $TimeoutSeconds seconds for graceful exit..."
-    
-    $waited = 0
-    $checkInterval = 2
-    while (!$proc.HasExited -and $waited -lt $TimeoutSeconds) {
-        Start-Sleep -Seconds $checkInterval
-        $waited += $checkInterval
-        if ($waited % 10 -eq 0) {
-            Write-Host "[Wrapper] Still waiting... ($waited/$TimeoutSeconds seconds)"
-        }
-    }
-    
-    if ($proc.HasExited) {
-        Write-Host "[Wrapper] Process exited gracefully after $waited seconds."
-        Write-Host "[Wrapper] Exit code: $($proc.ExitCode)"
-    }
-    else {
-        Write-Host "[Wrapper] Timeout reached. Forcefully terminating..."
-        try {
-            $proc.Kill()
-            $proc.WaitForExit(5000)
-            Write-Host "[Wrapper] Process forcefully terminated."
-        }
-        catch {
-            Write-Host "[Wrapper] Error during force kill: $_"
-        }
+    catch {
+        return $false
     }
 }
 
-# Set up Ctrl+C handler for the wrapper itself
-[Console]::TreatControlCAsInput = $false
-$null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
-    Write-Host "[Wrapper] PowerShell exiting event triggered."
-    if (($null -ne $process) -and (!$process.HasExited)) {
-        Send-GracefulShutdown $process
-    }
+if (!(Test-Path $ExePath)) {
+    Write-Host "[Wrapper] ERROR: Server executable not found: $ExePath"
+    exit 1
 }
+
+$argString = $ScriptArgs -join " "
+Write-Host "[Wrapper] Executable: $ExePath"
+Write-Host "[Wrapper] Arguments: $argString"
+Write-Host "[Wrapper] --------------------------------------------------"
 
 try {
-    Write-Host "[Wrapper] =================================================="
-    Write-Host "[Wrapper] SCUM Server Graceful Shutdown Wrapper v1.0"
-    Write-Host "[Wrapper] =================================================="
-    Write-Host "[Wrapper] Executable: $ExePath"
-    Write-Host "[Wrapper] Arguments: $ScriptArgs"
-    Write-Host "[Wrapper] --------------------------------------------------"
-
-    if (!(Test-Path $ExePath)) {
-        Write-Host "[Wrapper] ERROR: Server executable not found at: $ExePath"
-        exit 1
-    }
-
-    # Start SCUM Server
-    # Use -NoNewWindow to keep it in the same console for signal sending
     Write-Host "[Wrapper] Starting SCUM Server..."
+    
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $ExePath
-    $psi.Arguments = $ScriptArgs -join " "
+    $psi.Arguments = $argString
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $false
     
     $process = [System.Diagnostics.Process]::Start($psi)
     
     if ($null -eq $process) {
-        Write-Host "[Wrapper] ERROR: Failed to start process."
+        Write-Host "[Wrapper] ERROR: Failed to start process"
         exit 1
     }
 
-    Write-Host "[Wrapper] Server started successfully. PID: $($process.Id)"
-    Write-Host "[Wrapper] Monitoring process... (Press Ctrl+C to shutdown gracefully)"
+    Write-Host "[Wrapper] Server started. PID: $($process.Id)"
+    Write-Host "[Wrapper] Monitoring process..."
     Write-Host "[Wrapper] --------------------------------------------------"
-
-    # Main wait loop
+    
+    # Wait for process to exit
     while (!$process.HasExited) {
         Start-Sleep -Milliseconds 500
     }
     
-    Write-Host "[Wrapper] Process exited naturally. Exit code: $($process.ExitCode)"
+    Write-Host "[Wrapper] Process exited. Code: $($process.ExitCode)"
+    exit $process.ExitCode
 
 }
 catch {
     Write-Host "[Wrapper] ERROR: $_"
-    Write-Host "[Wrapper] Stack trace: $($_.ScriptStackTrace)"
     exit 1
     
 }
 finally {
-    # This runs on Ctrl+C, script termination, or natural exit
-    if (($null -ne $process) -and (!$process.HasExited) -and (!$isShuttingDown)) {
-        Write-Host "[Wrapper] Finally block triggered - initiating shutdown..."
-        Send-GracefulShutdown $process
+    # This block runs when PowerShell wrapper is terminated by AMP (OS_CLOSE)
+    if ($null -ne $process -and !$process.HasExited) {
+        Write-Host "[Wrapper] Wrapper terminating - sending shutdown signal to SCUM..."
+        
+        if (Send-CtrlC $process) {
+            Write-Host "[Wrapper] Signal sent. Waiting up to 60s for graceful exit..."
+            
+            $waited = 0
+            while (!$process.HasExited -and $waited -lt 60) {
+                Start-Sleep -Seconds 2
+                $waited += 2
+                if ($waited % 10 -eq 0) {
+                    Write-Host "[Wrapper] Still waiting... ($waited/60s)"
+                }
+            }
+            
+            if ($process.HasExited) {
+                Write-Host "[Wrapper] Server shutdown gracefully after $waited seconds"
+            }
+            else {
+                Write-Host "[Wrapper] Timeout! Force killing..."
+                try { $process.Kill() } catch {}
+            }
+        }
+        else {
+            Write-Host "[Wrapper] Failed to send signal, force killing..."
+            try { $process.Kill() } catch {}
+        }
+        
+        try { $process.Dispose() } catch {}
     }
     
-    if ($null -ne $process) {
-        $process.Dispose()
-    }
-    
-    Write-Host "[Wrapper] Wrapper script exiting."
+    Write-Host "[Wrapper] Wrapper exiting"
+    Write-Host "[Wrapper] =================================================="
 }
