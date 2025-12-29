@@ -99,6 +99,19 @@
         }
     },
     {
+        "DisplayName": "Additional Server Arguments",
+        "Category": "SCUM:stadia_controller",
+        "Subcategory": "Server:dns:1",
+        "Description": "Additional command line arguments to pass to the SCUM server. For example: -fileopenlog or -MULTIHOME=0.0.0.0. Separate multiple arguments with spaces. **Requires server restart to take effect**",
+        "Keywords": "additional,arguments,command,line,custom,fileopenlog,multihome",
+        "FieldName": "AdditionalArgs",
+        "InputType": "text",
+        "ParamFieldName": "AdditionalArgs",
+        "DefaultValue": "",
+        "Placeholder": "-fileopenlog",
+        "EnumValues": {}
+    },
+    {
         "DisplayName": "Proton GE Release Version (Linux)",
         "Category": "Updates",
         "Subcategory": "Runtime Configuration:build:3",
