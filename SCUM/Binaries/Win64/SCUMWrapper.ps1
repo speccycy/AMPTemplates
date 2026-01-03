@@ -641,10 +641,27 @@ try {
     # Poll every PROCESS_POLL_INTERVAL (500ms) to balance responsiveness and CPU
     $stopSignalFile = Join-Path $PSScriptRoot "scum_stop.signal"
     $ampExitFile = Join-Path $PSScriptRoot "app_exit.lck"
+    $parentPID = (Get-Process -Id $PID).Parent.Id
     $lastCheck = Get-Date
     
     while (!$process.HasExited) {
         Start-Sleep -Milliseconds ($PROCESS_POLL_INTERVAL * 1000)
+        
+        # Check if parent process (AMP) is still alive
+        # If parent is gone, AMP is killing us - trigger shutdown immediately
+        try {
+            $parentProcess = Get-Process -Id $parentPID -ErrorAction Stop
+            if ($parentProcess.HasExited) {
+                Write-WrapperLog "Parent process (AMP) has exited - shutdown requested" "WARNING"
+                $script:abortRequested = $true
+                break
+            }
+        }
+        catch {
+            Write-WrapperLog "Parent process (AMP) not found - shutdown requested" "WARNING"
+            $script:abortRequested = $true
+            break
+        }
         
         # Check for stop signal files on every iteration (critical for abort responsiveness)
         # Check both scum_stop.signal (manual/testing) and app_exit.lck (AMP native)
