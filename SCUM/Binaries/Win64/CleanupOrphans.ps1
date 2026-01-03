@@ -6,9 +6,12 @@
     This script is called by AMP after stopping the wrapper to ensure
     all SCUM server processes are terminated. This is a failsafe in case
     the wrapper's finally block doesn't execute.
+    
+    Supports both PowerShell 5.1 (powershell.exe) and PowerShell 7 (pwsh.exe)
 
 .NOTES
     This script should be configured in scum.kvp as a post-stop action
+    Version: 3.1
 #>
 
 $logDir = Join-Path $PSScriptRoot "Logs"
@@ -63,7 +66,11 @@ else {
 # Find and kill wrapper PowerShell processes running SCUMWrapper.ps1
 # This is necessary because AMP does NOT terminate the wrapper process
 Write-CleanupLog "Scanning for orphaned wrapper processes..."
-$allPowerShell = Get-Process -Name "powershell" -ErrorAction SilentlyContinue
+
+# Check both PowerShell 5.1 (powershell.exe) and PowerShell 7 (pwsh.exe)
+$allPowerShell = @()
+$allPowerShell += Get-Process -Name "powershell" -ErrorAction SilentlyContinue
+$allPowerShell += Get-Process -Name "pwsh" -ErrorAction SilentlyContinue
 
 if ($allPowerShell) {
     foreach ($ps in $allPowerShell) {
@@ -72,7 +79,7 @@ if ($allPowerShell) {
             $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($ps.Id)" -ErrorAction SilentlyContinue).CommandLine
             
             if ($cmdLine -and $cmdLine -match "SCUMWrapper\.ps1") {
-                Write-CleanupLog "Found orphaned wrapper process PID: $($ps.Id)"
+                Write-CleanupLog "Found orphaned wrapper process PID: $($ps.Id) ($($ps.Name))"
                 Write-CleanupLog "Killing wrapper PID: $($ps.Id)"
                 Stop-Process -Id $ps.Id -Force -ErrorAction Stop
                 Write-CleanupLog "Successfully killed wrapper PID: $($ps.Id)"

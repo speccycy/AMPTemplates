@@ -23,18 +23,17 @@
     These are forwarded directly to the game server executable
 
 .NOTES
-    Version:        3.0
+    Version:        3.1
     Author:         CubeCoders AMP Template
     Purpose:        Ensure data integrity and prevent database corruption
-    Requirements:   PowerShell 5.1+, Windows Server
+    Requirements:   PowerShell 7.0+, Windows Server
     
     CRITICAL: This wrapper must be configured in scum.kvp with:
-    - App.ExitMethod=OS_CLOSE
-    - App.ExitMethodWindows=CtrlC
+    - App.ExitMethod=SIGTERM
     - App.ExitTimeout=35
 
 .EXAMPLE
-    .\SCUMWrapper.ps1 Port=7042 QueryPort=7043 MaxPlayers=64
+    pwsh.exe -ExecutionPolicy Bypass -File SCUMWrapper.ps1 Port=7042 QueryPort=7043 MaxPlayers=64
     
     Starts SCUM server with specified parameters, managed by the wrapper
 
@@ -181,7 +180,8 @@ function Remove-OldLogs {
 Remove-OldLogs
 
 Write-WrapperLog "=================================================="
-Write-WrapperLog "SCUM Server Graceful Shutdown Wrapper v3.0"
+Write-WrapperLog "SCUM Server Graceful Shutdown Wrapper v3.1"
+Write-WrapperLog "PowerShell Version: $($PSVersionTable.PSVersion)"
 Write-WrapperLog "Wrapper PID: $PID"
 Write-WrapperLog "=================================================="
 

@@ -14,6 +14,8 @@
     Called by: AMP PreStopStages
     Monitored by: SCUMWrapper.ps1 monitoring loop
     File location: Binaries/Win64/scum_stop.signal
+    Version: 3.1
+    Compatible with: PowerShell 5.1+ and PowerShell 7+
 #>
 
 $signalFile = Join-Path $PSScriptRoot "scum_stop.signal"
