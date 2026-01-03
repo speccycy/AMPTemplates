@@ -1,4 +1,4 @@
-Meta.DisplayName=SCUM (speccycy-dev)
+Meta.DisplayName=SCUM (speccycy-development)
 Meta.Description=SCUM Dedicated Server - Development Version with File-Based Signaling
 Meta.OS=Windows, Linux
 Meta.AarchSupport=Unknown
@@ -27,7 +27,7 @@ Meta.BreakingReleaseNotes=
 Meta.AppConfigId=f47281e0-63d1-4ece-b732-d1b24116cc9a
 Meta.ImportableExtensions=[".ini"]
 Meta.AppIsMultiIPAware=False
-App.DisplayName=SCUM (speccycy-dev)
+App.DisplayName=SCUM (speccycy-development)
 App.RootDir=./scum/
 App.BaseDirectory=./scum/3792580/
 App.SteamWorkshopDownloadLocation=
