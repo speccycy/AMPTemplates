@@ -283,11 +283,18 @@ function Stop-OrphanedSCUMProcesses {
 # Run orphan cleanup before starting
 Stop-OrphanedSCUMProcesses
 
-# Clean up any leftover stop signal file from previous run
+# Clean up any leftover stop signal files from previous run
 $stopSignalFile = Join-Path $PSScriptRoot "scum_stop.signal"
 if (Test-Path $stopSignalFile) {
     Remove-Item $stopSignalFile -Force -ErrorAction SilentlyContinue
-    Write-WrapperLog "Removed leftover stop signal file" "DEBUG"
+    Write-WrapperLog "Removed leftover stop signal file (scum_stop.signal)" "DEBUG"
+}
+
+# Clean up AMP's app_exit.lck file (critical for restart after update)
+$ampExitFile = Join-Path $PSScriptRoot "app_exit.lck"
+if (Test-Path $ampExitFile) {
+    Remove-Item $ampExitFile -Force -ErrorAction SilentlyContinue
+    Write-WrapperLog "Removed leftover AMP exit file (app_exit.lck)" "DEBUG"
 }
 
 # ============================================================================
@@ -593,6 +600,9 @@ Write-WrapperLog "--------------------------------------------------"
 try {
     Write-WrapperLog "Starting SCUM Server..."
     
+    # Flag to track if shutdown was requested during startup phase
+    $script:abortRequested = $false
+    
     # Configure process start info
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $ExePath
@@ -630,15 +640,24 @@ try {
     # Also actively check for stop signal file (AMP doesn't send Ctrl+C to wrapper)
     # Poll every PROCESS_POLL_INTERVAL (500ms) to balance responsiveness and CPU
     $stopSignalFile = Join-Path $PSScriptRoot "scum_stop.signal"
+    $ampExitFile = Join-Path $PSScriptRoot "app_exit.lck"
     $lastCheck = Get-Date
     
     while (!$process.HasExited) {
         Start-Sleep -Milliseconds ($PROCESS_POLL_INTERVAL * 1000)
         
-        # Check for stop signal file on every iteration (critical for abort responsiveness)
-        if (Test-Path $stopSignalFile) {
-            Write-WrapperLog "Stop signal file detected - shutdown requested" "WARNING"
+        # Check for stop signal files on every iteration (critical for abort responsiveness)
+        # Check both scum_stop.signal (PreStopStages) and app_exit.lck (AMP native)
+        if ((Test-Path $stopSignalFile) -or (Test-Path $ampExitFile)) {
+            $signalSource = if (Test-Path $stopSignalFile) { "scum_stop.signal" } else { "app_exit.lck" }
+            Write-WrapperLog "Stop signal file detected ($signalSource) - shutdown requested" "WARNING"
             Remove-Item $stopSignalFile -Force -ErrorAction SilentlyContinue
+            Remove-Item $ampExitFile -Force -ErrorAction SilentlyContinue
+            
+            # Set abort flag to force immediate kill in finally block
+            $script:abortRequested = $true
+            Write-WrapperLog "Abort flag set - will force kill process" "DEBUG"
+            
             break
         }
         
@@ -745,10 +764,19 @@ finally {
             # SHUTDOWN DECISION: ABORT vs GRACEFUL
             # ================================================================
             
+            # PRIORITY 1: Check if abort was explicitly requested (user clicked Abort button)
+            # This takes precedence over uptime-based decision
+            if ($script:abortRequested) {
+                Write-WrapperLog "ABORT REQUESTED by user - FORCE KILL MODE" "WARNING"
+                Write-WrapperLog "State: FORCE_KILL - Terminating PID $($process.Id)..." "DEBUG"
+                $process.Kill()
+                Write-WrapperLog "Process killed (user abort)" "DEBUG"
+                Write-WrapperLog "Shutdown completed (user abort, force killed)" "WARNING"
+            }
             # ABORT MODE: Server in startup phase (< STARTUP_PHASE_THRESHOLD seconds)
             # Rationale: Server hasn't fully initialized, no player data to save
             # Action: Immediate force kill
-            if ($uptimeSeconds -lt $STARTUP_PHASE_THRESHOLD) {
+            elseif ($uptimeSeconds -lt $STARTUP_PHASE_THRESHOLD) {
                 Write-WrapperLog "Server in startup phase (< $STARTUP_PHASE_THRESHOLD`s) - ABORT MODE" "WARNING"
                 Write-WrapperLog "State: FORCE_KILL - Terminating PID $($process.Id)..." "DEBUG"
                 $process.Kill()
@@ -873,7 +901,14 @@ finally {
     $stopSignalFile = Join-Path $PSScriptRoot "scum_stop.signal"
     if (Test-Path $stopSignalFile) {
         Remove-Item $stopSignalFile -Force -ErrorAction SilentlyContinue
-        Write-WrapperLog "Cleaned up stop signal file"
+        Write-WrapperLog "Cleaned up stop signal file (scum_stop.signal)"
+    }
+    
+    # Remove AMP exit file if it exists
+    $ampExitFile = Join-Path $PSScriptRoot "app_exit.lck"
+    if (Test-Path $ampExitFile) {
+        Remove-Item $ampExitFile -Force -ErrorAction SilentlyContinue
+        Write-WrapperLog "Cleaned up AMP exit file (app_exit.lck)"
     }
     
     Write-WrapperLog "Wrapper exiting"
