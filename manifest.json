@@ -1,9 +1,9 @@
 {
-	"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+	"id": "d1e2f3a4-b5c6-7890-1234-567890abcdef",
 	"authors": ["speccycy", "CubeCoders Limited", "AMP Community"],
 	"origin": "https://github.com/speccycy/AMPTemplates.git",
 	"url": "https://github.com/speccycy/AMPTemplates",
 	"imagefile": "",
-	"prefix": "speccycy",
+	"prefix": "speccycy-dev",
 	"repotype": "AppTemplates"
 }
