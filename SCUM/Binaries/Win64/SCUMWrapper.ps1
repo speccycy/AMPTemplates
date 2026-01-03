@@ -647,7 +647,7 @@ try {
         Start-Sleep -Milliseconds ($PROCESS_POLL_INTERVAL * 1000)
         
         # Check for stop signal files on every iteration (critical for abort responsiveness)
-        # Check both scum_stop.signal (PreStopStages) and app_exit.lck (AMP native)
+        # Check both scum_stop.signal (manual/testing) and app_exit.lck (AMP native)
         if ((Test-Path $stopSignalFile) -or (Test-Path $ampExitFile)) {
             $signalSource = if (Test-Path $stopSignalFile) { "scum_stop.signal" } else { "app_exit.lck" }
             Write-WrapperLog "Stop signal file detected ($signalSource) - shutdown requested" "WARNING"
