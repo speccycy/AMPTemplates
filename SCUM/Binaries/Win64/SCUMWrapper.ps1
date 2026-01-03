@@ -641,26 +641,34 @@ try {
     # Poll every PROCESS_POLL_INTERVAL (500ms) to balance responsiveness and CPU
     $stopSignalFile = Join-Path $PSScriptRoot "scum_stop.signal"
     $ampExitFile = Join-Path $PSScriptRoot "app_exit.lck"
-    $parentPID = (Get-Process -Id $PID).Parent.Id
+    
+    # Get parent process ID using WMI (more reliable than .Parent property)
+    try {
+        $parentPID = (Get-CimInstance Win32_Process -Filter "ProcessId = $PID").ParentProcessId
+        Write-WrapperLog "Parent process PID: $parentPID" "DEBUG"
+    }
+    catch {
+        Write-WrapperLog "Failed to get parent PID: $_" "WARNING"
+        $parentPID = $null
+    }
+    
     $lastCheck = Get-Date
     
     while (!$process.HasExited) {
         Start-Sleep -Milliseconds ($PROCESS_POLL_INTERVAL * 1000)
         
-        # Check if parent process (AMP) is still alive
+        # Check if parent process (AMP) is still alive (only if we have parent PID)
         # If parent is gone, AMP is killing us - trigger shutdown immediately
-        try {
-            $parentProcess = Get-Process -Id $parentPID -ErrorAction Stop
-            if ($parentProcess.HasExited) {
-                Write-WrapperLog "Parent process (AMP) has exited - shutdown requested" "WARNING"
+        if ($null -ne $parentPID) {
+            try {
+                $parentProcess = Get-Process -Id $parentPID -ErrorAction Stop
+                # Parent process exists, continue monitoring
+            }
+            catch {
+                Write-WrapperLog "Parent process (PID: $parentPID) not found - AMP killed wrapper" "WARNING"
                 $script:abortRequested = $true
                 break
             }
-        }
-        catch {
-            Write-WrapperLog "Parent process (AMP) not found - shutdown requested" "WARNING"
-            $script:abortRequested = $true
-            break
         }
         
         # Check for stop signal files on every iteration (critical for abort responsiveness)
