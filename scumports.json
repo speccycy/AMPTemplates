@@ -8,7 +8,7 @@
             {
                 "Protocol": "TCP",
                 "Port": 7779,
-                "Ref": "ClientPort",
+                "Ref": "ClientConnectionPort",
                 "Offset": 2,
                 "Name": "Client Port",
                 "Description": "Port for client connections"
