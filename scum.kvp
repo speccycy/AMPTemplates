@@ -25,6 +25,7 @@ Meta.ConfigVersion=3
 Meta.ReleaseNotes=
 Meta.BreakingReleaseNotes=
 Meta.AppConfigId=f47281e0-63d1-4ece-b732-d1b24116cc9a
+Meta.OriginalSource=speccycy-AMPTemplates-dev
 Meta.ImportableExtensions=[".ini"]
 Meta.AppIsMultiIPAware=False
 App.DisplayName=SCUM (DEV)
