@@ -1,9 +1,9 @@
-Meta.DisplayName=SCUM (Development)
-Meta.Description=SCUM Dedicated Server - Development Version with File-Based Signaling
+Meta.DisplayName=SCUM
+Meta.Description=SCUM Dedicated Server
 Meta.OS=Windows, Linux
 Meta.AarchSupport=Unknown
 Meta.Arch=x86_64
-Meta.Author=Greelan
+Meta.Author=Speccycy
 Meta.URL=https://scum.game/
 Meta.DisplayImageSource=steam:513710
 Meta.EndpointURIFormat={ip}:{GenericModule.App.Ports.$ClientPort}
@@ -27,7 +27,7 @@ Meta.BreakingReleaseNotes=
 Meta.AppConfigId=a1b2c3d4-e5f6-7890-1234-567890abcdef
 Meta.ImportableExtensions=[".ini"]
 Meta.AppIsMultiIPAware=False
-App.DisplayName=SCUM (Development)
+App.DisplayName=SCUM
 App.RootDir=./scum/
 App.BaseDirectory=./scum/3792580/
 App.SteamWorkshopDownloadLocation=
@@ -36,7 +36,7 @@ App.ExecutableLinux=.proton/proton
 App.WorkingDir=3792580
 App.LinuxCommandLineArgs=runinprefix "{{$FullBaseDir}}SCUM/Binaries/Win64/SCUMServer.exe"
 App.WindowsCommandLineArgs=
-App.CommandLineArgs=-ExecutionPolicy Bypass -File "SCUM\Binaries\Win64\SCUMWrapper.ps1" {{$PlatformArgs}} SCUM -Port={{$ServerPort}} -QueryPort={{$QueryPort}} -MaxPlayers={{$MaxUsers}} -log {{nobattleye}}{{AdditionalArgs}}{{$FormattedArgs}}
+App.CommandLineArgs=-ExecutionPolicy Bypass -File "SCUM\Binaries\Win64\SCUMWrapper.ps1" {{$PlatformArgs}} SCUM -Port={{$ServerPort}} -QueryPort={{$QueryPort}} -MaxPlayers={{$MaxUsers}} {{nobattleye}}{{AdditionalArgs}}{{$FormattedArgs}}
 App.UseLinuxIOREDIR=False
 App.AppSettings={}
 App.EnvironmentVariables={"SteamAppId":"513710","STEAM_COMPAT_DATA_PATH":"{{$FullRootDir}}.proton/compatdata","STEAM_COMPAT_CLIENT_INSTALL_PATH":"{{$FullBaseDir}}.steam/steam","HOME":"{{$FullBaseDir}}","XDG_RUNTIME_DIR":"/tmp"}
