@@ -6,7 +6,7 @@ Meta.Arch=x86_64
 Meta.Author=Speccycy
 Meta.URL=https://scum.game/
 Meta.DisplayImageSource=steam:513710
-Meta.EndpointURIFormat={ip}:{GenericModule.App.Ports.$ClientPort}
+Meta.EndpointURIFormat={ip}:{GenericModule.App.Ports.$QueryPort}
 Meta.ConfigManifest=scumconfig.json
 Meta.MetaConfigManifest=scummetaconfig.json
 Meta.ConfigRoot=scum.kvp
@@ -36,7 +36,7 @@ App.ExecutableLinux=.proton/proton
 App.WorkingDir=3792580
 App.LinuxCommandLineArgs=runinprefix "{{$FullBaseDir}}SCUM/Binaries/Win64/SCUMServer.exe"
 App.WindowsCommandLineArgs=
-App.CommandLineArgs=-ExecutionPolicy Bypass -File "SCUM\Binaries\Win64\SCUMWrapper.ps1" {{$PlatformArgs}} SCUM -Port={{$ServerPort}} -QueryPort={{$QueryPort}} -MaxPlayers={{$MaxUsers}} -log {{nobattleye}}{{AdditionalArgs}}{{$FormattedArgs}}
+App.CommandLineArgs=-ExecutionPolicy Bypass -File "SCUM\Binaries\Win64\SCUMWrapper.ps1" {{$PlatformArgs}} SCUM -Port={{$GamePort}} -QueryPort={{$QueryPort}} -MaxPlayers={{$MaxUsers}} -log {{nobattleye}}{{AdditionalArgs}}{{$FormattedArgs}}
 App.UseLinuxIOREDIR=False
 App.AppSettings={}
 App.EnvironmentVariables={"SteamAppId":"513710","STEAM_COMPAT_DATA_PATH":"{{$FullRootDir}}.proton/compatdata","STEAM_COMPAT_CLIENT_INSTALL_PATH":"{{$FullBaseDir}}.steam/steam","HOME":"{{$FullBaseDir}}","XDG_RUNTIME_DIR":"/tmp"}
