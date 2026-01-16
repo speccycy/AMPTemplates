@@ -745,12 +745,23 @@ function Send-CtrlC {
     and terminates all processes in the job.
 #>
 
-$ExePath = Join-Path $PSScriptRoot "SCUMServer.exe"
+# Calculate paths based on wrapper location
+# Wrapper is at: C:\AMPDatastore\Instances\{InstanceName}\SCUM_Scripts\SCUMWrapper.ps1
+# Server is at:  C:\AMPDatastore\Instances\{InstanceName}\scum\3792580\SCUM\Binaries\Win64\SCUMServer.exe
+
+# Get instance root directory (parent of SCUM_Scripts)
+$instanceRoot = Split-Path $PSScriptRoot -Parent
+
+# Build server executable path
+$ExePath = Join-Path $instanceRoot "scum\3792580\SCUM\Binaries\Win64\SCUMServer.exe"
+
 $process = $null
 
 # Validate executable exists
 if (!(Test-Path $ExePath)) {
     Write-WrapperLog "ERROR: Server executable not found: $ExePath" "ERROR"
+    Write-WrapperLog "Expected structure: {InstanceRoot}\scum\3792580\SCUM\Binaries\Win64\SCUMServer.exe" "ERROR"
+    Write-WrapperLog "Instance root: $instanceRoot" "ERROR"
     exit 1
 }
 
@@ -787,11 +798,9 @@ try {
     $global:ServerProcess = $process
     
     # Calculate and store SCUM log path for trap handler
-    # PSScriptRoot = .../SCUM/Binaries/Win64
-    # Split-Path -Parent (1st) = .../SCUM/Binaries
-    # Split-Path -Parent (2nd) = .../SCUM
-    # Join "Saved\Logs\SCUM.log" = .../SCUM/Saved/Logs/SCUM.log
-    $serverRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    # Server is at: {InstanceRoot}\scum\3792580\SCUM\Binaries\Win64\SCUMServer.exe
+    # Log is at:    {InstanceRoot}\scum\3792580\SCUM\Saved\Logs\SCUM.log
+    $serverRoot = Join-Path $instanceRoot "scum\3792580\SCUM"
     $global:ServerLogPath = Join-Path $serverRoot "Saved\Logs\SCUM.log"
 
     Write-WrapperLog "Server started successfully"
