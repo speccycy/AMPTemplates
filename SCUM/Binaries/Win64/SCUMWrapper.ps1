@@ -787,7 +787,11 @@ try {
     $global:ServerProcess = $process
     
     # Calculate and store SCUM log path for trap handler
-    $serverRoot = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
+    # PSScriptRoot = .../SCUM/Binaries/Win64
+    # Split-Path -Parent (1st) = .../SCUM/Binaries
+    # Split-Path -Parent (2nd) = .../SCUM
+    # Join "Saved\Logs\SCUM.log" = .../SCUM/Saved/Logs/SCUM.log
+    $serverRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
     $global:ServerLogPath = Join-Path $serverRoot "Saved\Logs\SCUM.log"
 
     Write-WrapperLog "Server started successfully"
@@ -921,16 +925,13 @@ try {
     Write-WrapperLog "--------------------------------------------------"
     
     # ========================================================================
-    # SIMPLIFIED APPROACH: Use AMP's existing detection
+    # SERVER READY DETECTION: Wait for "LogSCUM: Global Stats" in log file
     # ========================================================================
-    # Instead of trying to read SCUM.log ourselves, we rely on the fact that
-    # AMP's Console.AppReadyRegex already detects "LogSCUM: Global Stats"
-    # from the server's console output.
+    # This pattern indicates the server has fully loaded and is accepting
+    # connections. It's the same pattern AMP uses in Console.AppReadyRegex.
     #
-    # We just need to wait a reasonable amount of time for the server to
-    # reach that state, then create the flag and output our ready pattern.
-    #
-    # This is simpler and more reliable than trying to read log files.
+    # We monitor the SCUM.log file for this pattern, which is more accurate
+    # than memory-based detection.
     # ========================================================================
     
     $maxWaitTime = 120 # 2 minutes (SCUM usually takes 30-60 seconds)
@@ -938,7 +939,7 @@ try {
     $serverReady = $false
     
     Write-WrapperLog "Waiting for server to reach ready state (max ${maxWaitTime}s)..." "DEBUG"
-    Write-WrapperLog "Monitoring server process health..." "DEBUG"
+    Write-WrapperLog "Monitoring log file: $global:ServerLogPath" "DEBUG"
     
     $checkCount = 0
     while (((Get-Date) - $startTime).TotalSeconds -lt $maxWaitTime) {
@@ -951,33 +952,41 @@ try {
             break
         }
         
-        # Check server memory usage as a proxy for "ready" state
-        # SCUM server typically uses 8-10 GB when fully loaded
-        try {
-            $process.Refresh()
-            $memoryMB = [math]::Round($process.WorkingSet64 / 1MB, 0)
-            
-            if ($checkCount % 10 -eq 0) {
-                $elapsed = ((Get-Date) - $startTime).TotalSeconds
-                Write-WrapperLog "Check #${checkCount} (${elapsed}s): Server memory: ${memoryMB} MB" "DEBUG"
+        # Check if log file exists and contains ready pattern
+        if (Test-Path $global:ServerLogPath) {
+            try {
+                # Read last 50 lines of log file
+                $logContent = Get-Content $global:ServerLogPath -Tail 50 -ErrorAction Stop
+                
+                # Look for "LogSCUM: Global Stats" pattern
+                if ($logContent -match "LogSCUM: Global Stats") {
+                    $elapsed = ((Get-Date) - $startTime).TotalSeconds
+                    Write-WrapperLog "✓ Server READY detected in log after $([math]::Round($elapsed, 1))s"
+                    Write-WrapperLog "  Pattern found: LogSCUM: Global Stats" "DEBUG"
+                    $serverReady = $true
+                    break
+                }
+                
+                if ($checkCount % 10 -eq 0) {
+                    $elapsed = ((Get-Date) - $startTime).TotalSeconds
+                    Write-WrapperLog "Check #${checkCount} (${elapsed}s): Waiting for ready pattern..." "DEBUG"
+                }
             }
-            
-            # If server is using > 8 GB, it's probably ready
-            if ($memoryMB -gt 8000) {
-                $elapsed = ((Get-Date) - $startTime).TotalSeconds
-                Write-WrapperLog "✓ Server appears READY (memory: ${memoryMB} MB after $([math]::Round($elapsed, 1))s)"
-                $serverReady = $true
-                break
+            catch {
+                Write-WrapperLog "Error reading log file (check #${checkCount}): $_" "WARNING"
             }
         }
-        catch {
-            Write-WrapperLog "Error checking server status (check #${checkCount}): $_" "WARNING"
+        else {
+            if ($checkCount % 10 -eq 0) {
+                $elapsed = ((Get-Date) - $startTime).TotalSeconds
+                Write-WrapperLog "Check #${checkCount} (${elapsed}s): Log file not found yet" "DEBUG"
+            }
         }
         
         Start-Sleep -Seconds 2
     }
     
-    # If we didn't detect ready state by memory, assume it's ready after timeout
+    # If we didn't detect ready state, assume it's ready after timeout
     if (-not $serverReady -and -not $process.HasExited) {
         $elapsed = ((Get-Date) - $startTime).TotalSeconds
         Write-WrapperLog "Timeout reached (${elapsed}s). Assuming server is ready..." "WARNING"
