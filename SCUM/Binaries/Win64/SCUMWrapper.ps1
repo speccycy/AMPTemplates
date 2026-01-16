@@ -917,31 +917,103 @@ try {
         Write-WrapperLog "Failed to update PID file: $_" "WARNING"
     }
     
-    Write-WrapperLog "State: RUNNING - Monitoring process..."
+    Write-WrapperLog "State: STARTING - Waiting for server to be ready..."
     Write-WrapperLog "--------------------------------------------------"
     
     # ========================================================================
-    # CRITICAL: Create server ready flag file NOW
+    # SIMPLIFIED APPROACH: Use AMP's existing detection
     # ========================================================================
-    # At this point, AMP considers the server as "Started" because it sees
-    # the log line above: "State: RUNNING - Monitoring process..."
-    # 
-    # This matches AMP's Console.AppReadyRegex pattern:
-    #   ^\[WRAPPER-DEBUG\] State: RUNNING - Monitoring process\.\.\.
+    # Instead of trying to read SCUM.log ourselves, we rely on the fact that
+    # AMP's Console.AppReadyRegex already detects "LogSCUM: Global Stats"
+    # from the server's console output.
     #
-    # Therefore, if user clicks "Stop" from this point forward, it should
-    # be a GRACEFUL shutdown (not force kill).
+    # We just need to wait a reasonable amount of time for the server to
+    # reach that state, then create the flag and output our ready pattern.
+    #
+    # This is simpler and more reliable than trying to read log files.
     # ========================================================================
     
+    $maxWaitTime = 120 # 2 minutes (SCUM usually takes 30-60 seconds)
+    $startTime = Get-Date
+    $serverReady = $false
+    
+    Write-WrapperLog "Waiting for server to reach ready state (max ${maxWaitTime}s)..." "DEBUG"
+    Write-WrapperLog "Monitoring server process health..." "DEBUG"
+    
+    $checkCount = 0
+    while (((Get-Date) - $startTime).TotalSeconds -lt $maxWaitTime) {
+        $checkCount++
+        
+        # Check if server process is still alive
+        if ($process.HasExited) {
+            Write-WrapperLog "Server process died during startup!" "ERROR"
+            Write-WrapperLog "Exit code: $($process.ExitCode)" "ERROR"
+            break
+        }
+        
+        # Check server memory usage as a proxy for "ready" state
+        # SCUM server typically uses 8-10 GB when fully loaded
+        try {
+            $process.Refresh()
+            $memoryMB = [math]::Round($process.WorkingSet64 / 1MB, 0)
+            
+            if ($checkCount % 10 -eq 0) {
+                $elapsed = ((Get-Date) - $startTime).TotalSeconds
+                Write-WrapperLog "Check #${checkCount} (${elapsed}s): Server memory: ${memoryMB} MB" "DEBUG"
+            }
+            
+            # If server is using > 8 GB, it's probably ready
+            if ($memoryMB -gt 8000) {
+                $elapsed = ((Get-Date) - $startTime).TotalSeconds
+                Write-WrapperLog "✓ Server appears READY (memory: ${memoryMB} MB after $([math]::Round($elapsed, 1))s)"
+                $serverReady = $true
+                break
+            }
+        }
+        catch {
+            Write-WrapperLog "Error checking server status (check #${checkCount}): $_" "WARNING"
+        }
+        
+        Start-Sleep -Seconds 2
+    }
+    
+    # If we didn't detect ready state by memory, assume it's ready after timeout
+    if (-not $serverReady -and -not $process.HasExited) {
+        $elapsed = ((Get-Date) - $startTime).TotalSeconds
+        Write-WrapperLog "Timeout reached (${elapsed}s). Assuming server is ready..." "WARNING"
+        $serverReady = $true
+    }
+    
+    # Create flag file if server is ready
     $serverReadyFlagFile = Join-Path $PSScriptRoot "server_ready.flag"
-    try {
-        "READY" | Out-File $serverReadyFlagFile -Force -ErrorAction Stop
-        Write-WrapperLog "✓ Server ready flag created: $serverReadyFlagFile" "DEBUG"
-        Write-WrapperLog "  From this point, Stop = Graceful Shutdown" "DEBUG"
+    if ($serverReady) {
+        try {
+            "READY" | Out-File $serverReadyFlagFile -Force -ErrorAction Stop
+            Write-WrapperLog "✓ Server ready flag created: $serverReadyFlagFile" "DEBUG"
+            Write-WrapperLog "  From this point, Stop = Graceful Shutdown" "DEBUG"
+        }
+        catch {
+            Write-WrapperLog "Failed to create server ready flag: $_" "WARNING"
+        }
     }
-    catch {
-        Write-WrapperLog "Failed to create server ready flag: $_" "WARNING"
+    else {
+        Write-WrapperLog "Server did not reach ready state (process died)" "ERROR"
+        Write-WrapperLog "Flag NOT created - watchdog will FORCE KILL if wrapper dies" "WARNING"
     }
+    
+    # ========================================================================
+    # NOW OUTPUT THE AMP READY PATTERN
+    # ========================================================================
+    # This line triggers AMP's Console.AppReadyRegex:
+    #   ^\[WRAPPER-DEBUG\] State: RUNNING - Monitoring process\.\.\.
+    # 
+    # After this line, AMP will:
+    #   - Change state from "Starting" to "Started"
+    #   - Show "Stop" button instead of "Abort"
+    #   - Consider the server as fully started
+    # ========================================================================
+    Write-WrapperLog "State: RUNNING - Monitoring process..."
+    Write-WrapperLog "--------------------------------------------------"
     
     # Monitor process until it exits
     $lastHeartbeat = Get-Date
