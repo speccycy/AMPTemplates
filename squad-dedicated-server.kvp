@@ -1,5 +1,5 @@
-Meta.DisplayName=Squad (Production)
-Meta.Description=Squad Dedicated Server (Production)
+Meta.DisplayName=Squad
+Meta.Description=Squad Dedicated Server
 Meta.OS=Windows, Linux
 Meta.AarchSupport=Unknown
 Meta.Arch=x86_64
@@ -27,7 +27,7 @@ Meta.BreakingReleaseNotes=
 Meta.AppConfigId=1280ccd1-2cc0-4f8e-9a56-81e7347c6770
 Meta.ImportableExtensions=[]
 Meta.AppIsMultiIPAware=True
-App.DisplayName=Squad (Production)
+App.DisplayName=Squad
 App.RootDir=./squad-dedicated-server/
 App.BaseDirectory=./squad-dedicated-server/403240/
 App.SteamWorkshopDownloadLocation={{$FullBaseDir}}SquadGame/Plugins/Mods
