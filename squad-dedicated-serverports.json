@@ -2,29 +2,32 @@
     {
         "Protocol": "UDP",
         "Port": 7787,
-        "Ref": "ApplicationPort1",
+        "Ref": "GamePort",
         "Name": "Game Port",
-        "Description": "Port used for main game traffic"
+        "Description": "Port for game traffic",
+        "ChildPorts": [
+            {
+                "Protocol": "UDP",
+                "Port": 7788,
+                "Offset": 1,
+                "Ref": "QueryPort",
+                "Name": "Query Port",
+                "Description": "Port for Steam query traffic"
+            }
+        ]
     },
     {
-        "Protocol": "UDP",
-        "Port": 27165,
-        "Ref": "ApplicationPort2",
-        "Name": "Query Port",
-        "Description": "Port used for Steam query traffic"
-    },
-    {
-        "Protocol": "UDP",
+        "Protocol": "Both",
         "Port": 15000,
-        "Ref": "ApplicationPort3",
+        "Ref": "BeaconPort",
         "Name": "Beacon Port",
-        "Description": "Port used for the server browser and EOS"
+        "Description": "Port for the server browser and EOS (UDP and TCP)"
     },
     {
-        "Protocol": "TCP",
+        "Protocol": "Both",
         "Port": 21114,
         "Ref": "RemoteAdminPort",
         "Name": "RCON Port",
-        "Description": "Port used for RCON traffic"
+        "Description": "Port for RCON traffic (UDP and TCP)"
     }
 ]

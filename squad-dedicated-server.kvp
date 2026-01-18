@@ -36,7 +36,7 @@ App.ExecutableLinux=403240/SquadGame/Binaries/Linux/SquadGameServer
 App.WorkingDir=403240
 App.LinuxCommandLineArgs=
 App.WindowsCommandLineArgs=
-App.CommandLineArgs=MULTIHOME={{$ApplicationIPBinding}} Port={{$ApplicationPort1}} QueryPort={{$ApplicationPort2}} RCONPORT={{$RemoteAdminPort}} RCONPASSWORD={{$RemoteAdminPassword}} FIXEDMAXTICKRATE={{MaxTPS}} -beaconport={{$ApplicationPort3}} -log -fullcrashdump {{CustomArgs}}
+App.CommandLineArgs=MULTIHOME={{$ApplicationIPBinding}} Port={{$GamePort}} QueryPort={{$QueryPort}} RCONPORT={{$RemoteAdminPort}} RCONPASSWORD={{$RemoteAdminPassword}} FIXEDMAXTICKRATE={{MaxTPS}} -beaconport={{$BeaconPort}} -log -fullcrashdump {{CustomArgs}}
 App.UseLinuxIOREDIR=False
 App.AppSettings={}
 App.EnvironmentVariables={"LD_LIBRARY_PATH":"{{$FullRootDir}}403240/linux64:%LD_LIBRARY_PATH%","SteamAppId":"393380"}
@@ -57,9 +57,9 @@ App.SupportsIPv6=False
 App.ApplicationIPBinding=0.0.0.0
 App.UpdateSources=@IncludeJson[squad-dedicated-serverports.json]
 App.AdminPortRef=RemoteAdminPort
-App.PrimaryApplicationPortRef=ApplicationPort1
-App.UniversalSleepApplicationUDPPortRef=ApplicationPort1
-App.UniversalSleepSteamQueryPortRef=ApplicationPort2
+App.PrimaryApplicationPortRef=GamePort
+App.UniversalSleepApplicationUDPPortRef=GamePort
+App.UniversalSleepSteamQueryPortRef=QueryPort
 App.MaxUsers=100
 App.UseRandomAdminPassword=True
 App.PersistRandomPassword=False
