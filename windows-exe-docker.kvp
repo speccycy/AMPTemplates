@@ -1,0 +1,143 @@
+# ============================================================================
+# Windows EXE Runner with Docker Isolation - AMP Template Configuration
+# ============================================================================
+# This template allows you to manage any Windows executable (.exe) through AMP
+# with automatic Docker Windows container isolation for enhanced security.
+#
+# Key Features:
+# - Docker Windows container with process isolation
+# - CPU, memory, and network resource limits
+# - Simple Start/Stop/Restart/Abort controls
+# - Real-time console output monitoring via docker logs
+# - External watchdog for orphan container prevention
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Template Identity and Metadata
+# ----------------------------------------------------------------------------
+Meta.DisplayName=Windows EXE Docker
+Meta.Description=A secure AMP template for managing Windows executable (.exe) applications inside Docker Windows containers with process isolation. Provides filesystem, network, CPU/RAM isolation for untrusted customer executables while maintaining AMP's standard Start/Stop/Restart/Abort interface.
+Meta.OS=Windows
+Meta.AarchSupport=Unknown
+Meta.Arch=x86_64
+Meta.Author=speccycy
+Meta.URL=https://github.com/CubeCoders/AMPTemplates
+Meta.DisplayImageSource=
+Meta.EndpointURIFormat=
+Meta.ConfigManifest=windows-exe-dockerconfig.json
+Meta.MetaConfigManifest=windows-exe-dockermetaconfig.json
+Meta.ConfigRoot=windows-exe-docker.kvp
+Meta.MinAMPVersion=2.6.0.0
+Meta.SpecificDockerImage=
+Meta.DockerRequired=False
+Meta.DockerBaseReadOnly=False
+Meta.ContainerPolicy=NotSupported
+Meta.ContainerPolicyReason=Docker is managed by the wrapper script, not by AMP
+Meta.ExtraSetupStepsURI=
+Meta.Prerequisites=["Docker Desktop or Docker Engine must be installed with Windows container support enabled"]
+Meta.ExtraContainerPackages=[]
+Meta.ConfigReleaseState=NotSpecified
+Meta.NoCommercialUsage=False
+Meta.ConfigVersion=1
+Meta.ReleaseNotes=Initial release with Docker Windows container isolation
+Meta.BreakingReleaseNotes=
+# Unique identifier for this template - DO NOT change or reuse
+Meta.AppConfigId=d4e5f6a7-b8c9-4d0e-a1f2-3b4c5d6e7f80
+Meta.ImportableExtensions=[]
+Meta.AppIsMultiIPAware=False
+
+# ----------------------------------------------------------------------------
+# Application Execution Configuration
+# ----------------------------------------------------------------------------
+App.DisplayName=Windows EXE Docker
+App.RootDir=./windows-exe-docker/
+App.BaseDirectory=./windows-exe-docker/app/
+App.SteamWorkshopDownloadLocation=
+App.ExecutableWin=C:\Program Files\PowerShell\7\pwsh.exe
+App.ExecutableLinux=
+App.WorkingDir=app
+App.LinuxCommandLineArgs=
+App.WindowsCommandLineArgs=
+App.CommandLineArgs=-ExecutionPolicy Bypass -File "..\..\Docker_Scripts\DockerWrapper.ps1"
+App.UseLinuxIOREDIR=False
+App.AppSettings={}
+App.EnvironmentVariables={"DOCKER_IMAGE":"{{DockerImage}}","EXECUTABLE_PATH":"{{ExecutablePath}}","COMMAND_LINE_ARGS":"{{CommandLineArgs}}","CPU_LIMIT":"{{CpuLimit}}","MEMORY_LIMIT":"{{MemoryLimit}}","NETWORK_MODE":"{{NetworkMode}}","NETWORK_ADAPTER":"{{NetworkAdapter}}","CONTAINER_IP":"{{ContainerIP}}","NETWORK_SUBNET":"{{NetworkSubnet}}","NETWORK_GATEWAY":"{{NetworkGateway}}","EXTRA_MOUNTS":"{{ExtraMounts}}","READY_PATTERN":"{{ReadyPattern}}","UPDATE_SSL_CERTS":"{{UpdateSSLCerts}}"}
+App.ExitMethod=OS_CLOSE
+App.ExitMethodWindows=None
+App.ExitTimeout=35
+App.ExitString=
+App.ExitFile=
+App.RestartDelaySeconds=0
+App.HasWriteableConsole=False
+App.HasReadableConsole=True
+App.UDPLogger=False
+App.SupportsLiveSettingsChanges=False
+App.LiveSettingChangeCommandFormat=
+App.ForceIPBinding=False
+App.SupportsIPv6=False
+App.ApplicationIPBinding=0.0.0.0
+App.Ports=@IncludeJson[windows-exe-dockerports.json]
+App.AdminPortRef=0
+App.PrimaryApplicationPortRef=0
+App.UniversalSleepApplicationUDPPortRef=0
+App.UniversalSleepSteamQueryPortRef=0
+App.MaxUsers=0
+App.UseRandomAdminPassword=False
+App.PersistRandomPassword=False
+App.RemoteAdminPassword=
+App.AdminMethod=None
+App.IgnoreSTDOUTAfterRCON=False
+App.AdminLoginTransform=None
+App.StripANSIControlCodes=True
+App.LoginTransformPrefix=
+App.RCONConnectDelaySeconds=0
+App.RCONConnectRetrySeconds=0
+App.RCONHeartbeatMinutes=0
+App.RCONHeartbeatCommand=
+App.TelnetLoginFormat=
+App.TelnetNewLineType=Default
+App.TailLogFilePath=
+App.UpdateSources=@IncludeJson[windows-exe-dockerupdates.json]
+App.PreStartStages=[]
+App.UserActions=[]
+App.ForceUpdate=False
+App.ForceUpdateReason=
+App.Compatibility=None
+App.SteamUpdateAnonymousLogin=False
+App.SteamForceLoginPrompt=False
+App.RapidStartup=False
+App.SmartExcludeExemptions=[]
+App.SmartExcludeSupported=False
+App.DumpFullChildProcessTree=False
+App.MonitorChildProcess=False
+App.MonitorChildProcessName=
+App.MonitorDirectChildOnly=False
+App.SupportsUniversalSleep=False
+App.WakeupMode=Any
+App.ApplicationReadyMode=RegexMatch
+
+# ----------------------------------------------------------------------------
+# Console Output Configuration
+# ----------------------------------------------------------------------------
+Console.FilterMatchRegex=
+Console.FilterMatchReplacement=
+Console.ThrowawayMessageRegex=
+Console.AppReadyRegex=State: RUNNING - Monitoring process\.\.\.
+Console.UserJoinRegex=^$
+Console.UserLeaveRegex=^$
+Console.UserChatRegex=^$
+Console.UpdateAvailableRegex=^$
+Console.MetricsRegex=
+Console.SuppressLogAtStart=False
+Console.ActivateLogRegex=
+Console.UserActions={}
+
+# ----------------------------------------------------------------------------
+# Resource Limits and Auto-Retry Configuration
+# ----------------------------------------------------------------------------
+Limits.SleepMode=False
+Limits.SleepOnStart=False
+Limits.SleepDelayMinutes=5
+Limits.DozeDelay=2
+Limits.AutoRetryCount=2
+Limits.SleepStartThresholdSeconds=25
