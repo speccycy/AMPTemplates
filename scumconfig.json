@@ -69,6 +69,19 @@
         "EnumValues": {}
     },
     {
+        "DisplayName": "Additional Server Arguments (Appended)",
+        "Category": "SCUM:stadia_controller",
+        "Subcategory": "Server:dns:1",
+        "Description": "Extra command line arguments appended after all other arguments. Use this for arguments that must appear at the end of the command line. Separate multiple arguments with spaces. **Requires server restart to take effect**",
+        "Keywords": "additional,extra,arguments,command,line,custom,append,end",
+        "FieldName": "AdditionalArgs2",
+        "InputType": "text",
+        "ParamFieldName": "AdditionalArgs2",
+        "DefaultValue": "",
+        "Placeholder": "-MULTIHOME=208.115.197.250",
+        "EnumValues": {}
+    },
+    {
         "DisplayName": "Proton GE Release Version (Linux)",
         "Category": "Updates",
         "Subcategory": "Runtime Configuration:build:3",
