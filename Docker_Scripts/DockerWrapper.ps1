@@ -333,6 +333,8 @@ function Build-DockerCreateCommand {
         "--cpus", $CpuLimit
         "--memory", $MemoryLimit
         "--network", $NetworkName
+        "--dns", "1.1.1.1"
+        "--dns", "1.0.0.1"
         "--workdir", "C:\app"
     )
 
