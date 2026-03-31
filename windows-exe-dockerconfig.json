@@ -102,6 +102,7 @@
     "DefaultValue": "nat",
     "EnumValues": {
       "nat": "NAT - Standard Windows container networking (uses default route)",
+      "nat-bind": "NAT Bind - NAT through a specific adapter (all containers share one public IP)",
       "transparent": "Transparent - Bridge to physical adapter (container gets own IP, choose adapter below)",
       "none": "None - No network access (maximum isolation)"
     },
@@ -112,7 +113,7 @@
     "DisplayName": "Network Adapter Name",
     "Category": "Windows EXE Docker:application",
     "Subcategory": "Network Settings:lan:3",
-    "Description": "Name of the physical network adapter to bind the container to when using Transparent network mode. Must match the adapter name exactly as shown in Windows (e.g., 'Ethernet 2', 'LAN1'). Run 'Get-NetAdapter' in PowerShell to list available adapters. Ignored when Network Mode is not 'transparent'.",
+    "Description": "Name of the physical network adapter to bind to. Required for 'NAT Bind' and 'Transparent' modes. Must match the adapter name exactly as shown in Windows (e.g., 'Ethernet 2', 'LAN1'). Run 'Get-NetAdapter' in PowerShell to list available adapters. Ignored when Network Mode is 'nat' or 'none'.",
     "Keywords": "adapter,nic,interface,ethernet,network,card,binding,physical",
     "FieldName": "NetworkAdapter",
     "InputType": "text",

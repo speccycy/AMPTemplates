@@ -499,6 +499,81 @@ function Ensure-TransparentNetwork {
     return $netName
 }
 
+<#
+.SYNOPSIS
+    Ensures a Docker NAT network exists that is bound to a specific adapter.
+.DESCRIPTION
+    Creates a custom NAT network with an internal subnet (172.30.x.0/24) that
+    routes outbound traffic through the specified physical adapter. All containers
+    on this network share the adapter's public IP via NAT masquerading.
+
+    This solves the multi-NIC problem: when the default route points to NIC 1
+    but you want containers to use NIC 2 for outbound traffic.
+
+    The network is reusable — multiple containers can share it.
+.PARAMETER AdapterName
+    Windows network adapter name to bind outbound traffic to
+.OUTPUTS
+    String - The Docker network name, or $null on failure
+#>
+function Ensure-NatBindNetwork {
+    param(
+        [string]$AdapterName
+    )
+
+    $sanitized = $AdapterName.ToLower() -replace '[^a-z0-9]', '-' -replace '-+', '-' -replace '^-|-$', ''
+    $netName = "amp-nat-$sanitized"
+
+    # Check if network already exists
+    $existingDriver = & docker network inspect --format '{{.Driver}}' $netName 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-WrapperLog "NAT Bind network '$netName' already exists" "DEBUG"
+        return $netName
+    }
+
+    # Validate adapter exists on the host
+    Write-WrapperLog "Verifying network adapter '$AdapterName' exists..." "DEBUG"
+    try {
+        $adapter = Get-NetAdapter -Name $AdapterName -ErrorAction Stop
+        Write-WrapperLog "Adapter found: $($adapter.Name) (Status: $($adapter.Status), MAC: $($adapter.MacAddress))" "DEBUG"
+
+        if ($adapter.Status -ne "Up") {
+            Write-WrapperLog "WARNING: Adapter '$AdapterName' is not in 'Up' state (current: $($adapter.Status))" "WARNING"
+        }
+    } catch {
+        Write-WrapperLog "ERROR: Network adapter '$AdapterName' not found on this host." "ERROR"
+        Write-WrapperLog "Available adapters:" "ERROR"
+        try {
+            Get-NetAdapter | ForEach-Object {
+                Write-WrapperLog "  - $($_.Name) (Status: $($_.Status), MAC: $($_.MacAddress))" "ERROR"
+            }
+        } catch {}
+        return $null
+    }
+
+    # Build docker network create command
+    $netArgs = @(
+        "network", "create"
+        "-d", "nat"
+        "--subnet", "172.30.0.0/24"
+        "--gateway", "172.30.0.1"
+        "-o", "com.docker.network.windowsshim.interface=$AdapterName"
+        $netName
+    )
+
+    Write-WrapperLog "Creating NAT Bind network: docker $($netArgs -join ' ')" "DEBUG"
+
+    $createOutput = & docker @netArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-WrapperLog "ERROR: Failed to create NAT Bind network '$netName'" "ERROR"
+        Write-WrapperLog "Docker output: $($createOutput -join ' ')" "ERROR"
+        return $null
+    }
+
+    Write-WrapperLog "NAT Bind network '$netName' created successfully (adapter: $AdapterName)"
+    return $netName
+}
+
 # ============================================================================
 # PID FILE MANAGEMENT
 # ============================================================================
@@ -739,6 +814,22 @@ if ($networkMode -eq "transparent") {
     } else {
         Write-WrapperLog "IP assignment: DHCP (from physical network)"
     }
+} elseif ($networkMode -eq "nat-bind") {
+    if ([string]::IsNullOrWhiteSpace($networkAdapter)) {
+        Write-WrapperLog "ERROR: NAT Bind mode requires a Network Adapter Name to be configured." "ERROR"
+        Write-WrapperLog "Set the 'Network Adapter Name' in AMP instance settings (e.g., 'Ethernet 2')." "ERROR"
+        Write-WrapperLog "Run 'Get-NetAdapter' in PowerShell to list available adapters." "ERROR"
+        exit 1
+    }
+
+    $resolvedNetworkName = Ensure-NatBindNetwork -AdapterName $networkAdapter
+
+    if ($null -eq $resolvedNetworkName) {
+        Write-WrapperLog "ERROR: Failed to set up NAT Bind network. Cannot start container." "ERROR"
+        exit 1
+    }
+
+    Write-WrapperLog "Using NAT Bind network: $resolvedNetworkName (outbound via adapter: $networkAdapter)"
 }
 
 $createArgs = Build-DockerCreateCommand `
