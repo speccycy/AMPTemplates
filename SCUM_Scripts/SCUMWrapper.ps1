@@ -18,6 +18,7 @@
     - Automatic log rotation (7-day retention)
     - Event-based cleanup handlers for crash recovery
     - **Windows Job Objects for automatic child termination (ABORT FIX)**
+    - Optional ForceBindIP64 launch support for Windows multi-IP servers
     
     ABORT FIX (v3.2):
     The critical fix for orphan processes during Abort uses Windows Job Objects.
@@ -40,7 +41,7 @@
     These are forwarded directly to the game server executable
 
 .NOTES
-    Version:        3.2 (ABORT FIX - Job Objects)
+    Version:        3.3 (ForceBindIP support)
     Author:         CubeCoders AMP Template
     Purpose:        Ensure data integrity and prevent database corruption
     Requirements:   PowerShell 7.0+, Windows Server
@@ -109,6 +110,15 @@ Set-Variable -Name LOGEXIT_TAIL_LINES -Value 50 -Option Constant
 Set-Variable -Name LOGEXIT_PATTERN -Value "LogExit: Exiting" -Option Constant
     # Pattern to search for in SCUM.log
     # Confirms successful game save before shutdown
+
+# ForceBindIP integration
+Set-Variable -Name FORCEBINDIP_DEFAULT_PATH -Value "C:\Program Files (x86)\ForceBindIP\ForceBindIP64.exe" -Option Constant
+    # Default install location for the 64-bit ForceBindIP loader
+    # SCUMServer.exe is 64-bit, so ForceBindIP64.exe is required
+
+Set-Variable -Name FORCEBINDIP_SERVER_DETECT_TIMEOUT -Value 30 -Option Constant
+    # Maximum wait time for the ForceBindIP loader to spawn SCUMServer.exe
+    # The wrapper must monitor SCUMServer.exe, not the short-lived loader process
 
 # ============================================================================
 # LOGGING SYSTEM
@@ -197,7 +207,7 @@ function Remove-OldLogs {
 Remove-OldLogs
 
 Write-WrapperLog "=================================================="
-Write-WrapperLog "SCUM Server Graceful Shutdown Wrapper v3.1"
+Write-WrapperLog "SCUM Server Graceful Shutdown Wrapper v3.3"
 Write-WrapperLog "PowerShell Version: $($PSVersionTable.PSVersion)"
 Write-WrapperLog "Wrapper PID: $PID"
 Write-WrapperLog "=================================================="
@@ -209,6 +219,9 @@ Write-WrapperLog "=================================================="
 # Global variable to store server process (for cleanup on error)
 $global:ServerProcess = $null
 $global:ServerLogPath = ""
+
+# PID file path used by pre-start cleanup, singleton checks, and watchdog cleanup
+$pidFile = Join-Path $PSScriptRoot "scum_server.pid"
 
 # ============================================================================
 # ORPHAN PROCESS CLEANUP
@@ -359,8 +372,6 @@ if (Test-Path $ampExitFile) {
     Location: Binaries/Win64/scum_server.pid
     Cleaned up by: finally block and PowerShell.Exiting event handler
 #>
-
-$pidFile = Join-Path $PSScriptRoot "scum_server.pid"
 
 # Check for existing PID file (singleton enforcement)
 if (Test-Path $pidFile) {
@@ -709,6 +720,463 @@ function Send-CtrlC {
 }
 
 # ============================================================================
+# FORCEBINDIP LAUNCH SUPPORT
+# ============================================================================
+
+function Remove-OuterQuotes {
+    param([string]$Value)
+
+    if ($null -eq $Value) {
+        return ""
+    }
+
+    $trimmed = $Value.Trim()
+    if ($trimmed.Length -ge 2) {
+        $first = $trimmed[0]
+        $last = $trimmed[$trimmed.Length - 1]
+        if (($first -eq '"' -and $last -eq '"') -or ($first -eq "'" -and $last -eq "'")) {
+            return $trimmed.Substring(1, $trimmed.Length - 2)
+        }
+    }
+
+    return $trimmed
+}
+
+function Format-ArgumentListForLog {
+    param([string[]]$Arguments)
+
+    if (!$Arguments -or $Arguments.Count -eq 0) {
+        return ""
+    }
+
+    return (($Arguments | ForEach-Object {
+        $arg = [string]$_
+        if ($arg -match '\s|"') {
+            '"' + ($arg -replace '"', '\"') + '"'
+        }
+        else {
+            $arg
+        }
+    }) -join " ")
+}
+
+function Add-ProcessArguments {
+    param(
+        [System.Diagnostics.ProcessStartInfo]$ProcessStartInfo,
+        [string[]]$Arguments
+    )
+
+    foreach ($arg in @($Arguments)) {
+        if ($null -ne $arg) {
+            [void]$ProcessStartInfo.ArgumentList.Add([string]$arg)
+        }
+    }
+}
+
+function Resolve-SCUMLaunchOptions {
+    param([object[]]$RawArgs)
+
+    $serverArgs = New-Object 'System.Collections.Generic.List[string]'
+    $forceBindIPEnabled = $false
+    $forceBindIPDelayedInjection = $false
+    $forceBindIPPath = $FORCEBINDIP_DEFAULT_PATH
+    $forceBindIPBindAddress = ""
+
+    for ($i = 0; $i -lt @($RawArgs).Count; $i++) {
+        $arg = [string]$RawArgs[$i]
+
+        if ($arg -eq "-AMPForceBindIPEnabled") {
+            $forceBindIPEnabled = $true
+            continue
+        }
+
+        if ($arg -eq "-AMPForceBindIPDelayedInjection") {
+            $forceBindIPDelayedInjection = $true
+            continue
+        }
+
+        if ($arg -eq "-AMPForceBindIPPath") {
+            if ($i + 1 -lt @($RawArgs).Count) {
+                $i++
+                $forceBindIPPath = Remove-OuterQuotes ([string]$RawArgs[$i])
+            }
+            continue
+        }
+
+        if ($arg.StartsWith("-AMPForceBindIPPath=", [StringComparison]::OrdinalIgnoreCase)) {
+            $forceBindIPPath = Remove-OuterQuotes $arg.Substring("-AMPForceBindIPPath=".Length)
+            continue
+        }
+
+        if ($arg -eq "-AMPForceBindIPBindAddress") {
+            if ($i + 1 -lt @($RawArgs).Count) {
+                $i++
+                $forceBindIPBindAddress = Remove-OuterQuotes ([string]$RawArgs[$i])
+            }
+            continue
+        }
+
+        if ($arg.StartsWith("-AMPForceBindIPBindAddress=", [StringComparison]::OrdinalIgnoreCase)) {
+            $forceBindIPBindAddress = Remove-OuterQuotes $arg.Substring("-AMPForceBindIPBindAddress=".Length)
+            continue
+        }
+
+        [void]$serverArgs.Add($arg)
+    }
+
+    return [pscustomobject]@{
+        ServerArgs                    = [string[]]$serverArgs.ToArray()
+        ForceBindIPEnabled            = $forceBindIPEnabled
+        ForceBindIPPath               = $forceBindIPPath
+        ForceBindIPBindAddress        = $forceBindIPBindAddress
+        ForceBindIPDelayedInjection   = $forceBindIPDelayedInjection
+    }
+}
+
+function Resolve-ForceBindIPExecutable {
+    param([string]$ConfiguredPath)
+
+    $path = Remove-OuterQuotes $ConfiguredPath
+    if ([string]::IsNullOrWhiteSpace($path)) {
+        $path = $FORCEBINDIP_DEFAULT_PATH
+    }
+
+    $candidates = New-Object 'System.Collections.Generic.List[string]'
+    if ([System.IO.Path]::IsPathRooted($path)) {
+        [void]$candidates.Add($path)
+    }
+    else {
+        $instanceRootForForceBindIP = Split-Path $PSScriptRoot -Parent
+        [void]$candidates.Add((Join-Path $PSScriptRoot $path))
+        [void]$candidates.Add((Join-Path $instanceRootForForceBindIP $path))
+        [void]$candidates.Add($path)
+    }
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $candidate).ProviderPath
+        }
+    }
+
+    throw "ForceBindIP executable not found. Configured path: '$ConfiguredPath'. Expected ForceBindIP64.exe and BindIP.dll in the same folder."
+}
+
+function Convert-CimDateTime {
+    param($Value)
+
+    if ($Value -is [datetime]) {
+        return $Value
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return [datetime]::MinValue
+    }
+
+    try {
+        return [System.Management.ManagementDateTimeConverter]::ToDateTime([string]$Value)
+    }
+    catch {
+        try {
+            return [datetime]$Value
+        }
+        catch {
+            return [datetime]::MinValue
+        }
+    }
+}
+
+function Get-SCUMServerProcessesByExecutable {
+    param([string]$ExpectedExePath)
+
+    $resolvedExpectedPath = try {
+        (Resolve-Path -LiteralPath $ExpectedExePath -ErrorAction Stop).ProviderPath
+    }
+    catch {
+        $ExpectedExePath
+    }
+
+    $matchedProcesses = @()
+
+    try {
+        $candidates = Get-CimInstance Win32_Process -Filter "Name = 'SCUMServer.exe'" -ErrorAction Stop
+        foreach ($candidate in $candidates) {
+            if ([string]::IsNullOrWhiteSpace($candidate.ExecutablePath)) {
+                continue
+            }
+
+            if (![string]::Equals($candidate.ExecutablePath, $resolvedExpectedPath, [StringComparison]::OrdinalIgnoreCase)) {
+                continue
+            }
+
+            $matchedProcesses += [pscustomobject]@{
+                Id           = [int]$candidate.ProcessId
+                CreationDate = Convert-CimDateTime $candidate.CreationDate
+            }
+        }
+    }
+    catch {
+        Write-WrapperLog "CIM process lookup failed: $_" "WARNING"
+        $fallbackCandidates = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
+        foreach ($candidate in $fallbackCandidates) {
+            try {
+                if (![string]::Equals($candidate.Path, $resolvedExpectedPath, [StringComparison]::OrdinalIgnoreCase)) {
+                    continue
+                }
+
+                $matchedProcesses += [pscustomobject]@{
+                    Id           = [int]$candidate.Id
+                    CreationDate = $candidate.StartTime
+                }
+            }
+            catch {
+                # Some process properties may be inaccessible under restricted accounts.
+            }
+        }
+    }
+
+    return $matchedProcesses | Sort-Object CreationDate -Descending
+}
+
+function Wait-ForceBindIPServerProcess {
+    param(
+        [string]$ExpectedExePath,
+        [int[]]$ExcludedPids,
+        [datetime]$LaunchTime,
+        [System.Diagnostics.Process]$LauncherProcess
+    )
+
+    $deadline = (Get-Date).AddSeconds($FORCEBINDIP_SERVER_DETECT_TIMEOUT)
+    $reportedLauncherExit = $false
+    $excluded = @($ExcludedPids)
+
+    while ((Get-Date) -lt $deadline) {
+        $candidates = Get-SCUMServerProcessesByExecutable -ExpectedExePath $ExpectedExePath
+        foreach ($candidate in @($candidates)) {
+            if ($excluded -contains [int]$candidate.Id) {
+                continue
+            }
+
+            if ($candidate.CreationDate -ne [datetime]::MinValue -and $candidate.CreationDate -lt $LaunchTime.AddSeconds(-5)) {
+                continue
+            }
+
+            $serverProcess = Get-Process -Id $candidate.Id -ErrorAction SilentlyContinue
+            if ($serverProcess -and $serverProcess.ProcessName -eq "SCUMServer") {
+                return $serverProcess
+            }
+        }
+
+        if ($LauncherProcess) {
+            try {
+                $LauncherProcess.Refresh()
+                if ($LauncherProcess.HasExited -and !$reportedLauncherExit) {
+                    $reportedLauncherExit = $true
+                    Write-WrapperLog "ForceBindIP loader exited with code $($LauncherProcess.ExitCode)" "DEBUG"
+
+                    if ($LauncherProcess.ExitCode -ne 0) {
+                        throw "ForceBindIP loader failed with exit code $($LauncherProcess.ExitCode)"
+                    }
+                }
+            }
+            catch {
+                throw
+            }
+        }
+
+        Start-Sleep -Milliseconds 250
+    }
+
+    throw "Timed out waiting ${FORCEBINDIP_SERVER_DETECT_TIMEOUT}s for ForceBindIP to spawn SCUMServer.exe"
+}
+
+function Start-DirectSCUMServer {
+    param(
+        [string]$ServerExePath,
+        [string[]]$ServerArgs
+    )
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $ServerExePath
+    $psi.UseShellExecute = $false  # Direct process creation
+    $psi.CreateNoWindow = $false   # Allow console window
+    Add-ProcessArguments -ProcessStartInfo $psi -Arguments $ServerArgs
+
+    return [System.Diagnostics.Process]::Start($psi)
+}
+
+function Start-ForceBindIPSCUMServer {
+    param(
+        [string]$ServerExePath,
+        [string[]]$ServerArgs,
+        [string]$ForceBindIPPath,
+        [string]$BindAddress,
+        [bool]$DelayedInjection
+    )
+
+    if ([string]::IsNullOrWhiteSpace($BindAddress)) {
+        throw "ForceBindIP is enabled, but no bind address/interface GUID was configured."
+    }
+
+    $resolvedForceBindIPPath = Resolve-ForceBindIPExecutable -ConfiguredPath $ForceBindIPPath
+    $serverExeDirectory = Split-Path $ServerExePath -Parent
+    $existingServerPids = @((Get-SCUMServerProcessesByExecutable -ExpectedExePath $ServerExePath) | ForEach-Object { [int]$_.Id })
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $resolvedForceBindIPPath
+    $psi.WorkingDirectory = $serverExeDirectory
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $false
+
+    if ($DelayedInjection) {
+        [void]$psi.ArgumentList.Add("-i")
+    }
+
+    [void]$psi.ArgumentList.Add($BindAddress)
+    [void]$psi.ArgumentList.Add($ServerExePath)
+    Add-ProcessArguments -ProcessStartInfo $psi -Arguments $ServerArgs
+
+    $forceBindArgsForLog = @()
+    if ($DelayedInjection) {
+        $forceBindArgsForLog += "-i"
+    }
+    $forceBindArgsForLog += $BindAddress
+    $forceBindArgsForLog += $ServerExePath
+    $forceBindArgsForLog += $ServerArgs
+
+    Write-WrapperLog "ForceBindIP enabled"
+    Write-WrapperLog "ForceBindIP executable: $resolvedForceBindIPPath"
+    Write-WrapperLog "ForceBindIP bind target: $BindAddress"
+    Write-WrapperLog "ForceBindIP delayed injection: $DelayedInjection"
+    Write-WrapperLog "ForceBindIP working directory: $serverExeDirectory" "DEBUG"
+    Write-WrapperLog "ForceBindIP command arguments: $(Format-ArgumentListForLog -Arguments $forceBindArgsForLog)" "DEBUG"
+
+    $launchTime = Get-Date
+    $launcherProcess = [System.Diagnostics.Process]::Start($psi)
+    if ($null -eq $launcherProcess) {
+        throw "Failed to start ForceBindIP loader"
+    }
+
+    Write-WrapperLog "ForceBindIP loader PID: $($launcherProcess.Id)" "DEBUG"
+
+    $serverProcess = Wait-ForceBindIPServerProcess `
+        -ExpectedExePath $ServerExePath `
+        -ExcludedPids $existingServerPids `
+        -LaunchTime $launchTime `
+        -LauncherProcess $launcherProcess
+
+    Write-WrapperLog "ForceBindIP spawned SCUMServer.exe PID: $($serverProcess.Id)"
+    return $serverProcess
+}
+
+function Start-SCUMExternalWatchdog {
+    param(
+        [int]$ServerPID,
+        [string]$SCUMLogPath,
+        [string]$ServerExePath = ""
+    )
+
+    Write-WrapperLog "=================================================="
+    Write-WrapperLog "STARTING EXTERNAL WATCHDOG (Orphan Prevention)"
+    Write-WrapperLog "=================================================="
+
+    try {
+        $watchdogScript = Join-Path $PSScriptRoot "SCUMWatchdog.ps1"
+
+        Write-WrapperLog "Step 1: Locating watchdog script..." "DEBUG"
+        Write-WrapperLog "  - Script path: $watchdogScript" "DEBUG"
+
+        if (!(Test-Path $watchdogScript)) {
+            Write-WrapperLog "  x ERROR: Watchdog script not found!" "ERROR"
+            Write-WrapperLog "  Expected location: $watchdogScript" "ERROR"
+            Write-WrapperLog "  ORPHAN PREVENTION WILL NOT WORK!" "ERROR"
+            Write-WrapperLog "  Server may become orphaned if wrapper is killed during startup" "ERROR"
+            return $null
+        }
+
+        Write-WrapperLog "  Watchdog script found" "DEBUG"
+
+        Write-WrapperLog "Step 2: Preparing watchdog arguments..." "DEBUG"
+        $watchdogArgs = @(
+            "-ExecutionPolicy", "Bypass",
+            "-File", "`"$watchdogScript`"",
+            "-WrapperPID", $PID,
+            "-ServerPID", $ServerPID,
+            "-PIDFile", "`"scum_server.pid`"",
+            "-SCUMLogPath", "`"$SCUMLogPath`""
+        )
+
+        if (![string]::IsNullOrWhiteSpace($ServerExePath)) {
+            $watchdogArgs += @("-ServerExePath", "`"$ServerExePath`"")
+        }
+
+        Write-WrapperLog "  - Wrapper PID: $PID" "DEBUG"
+        Write-WrapperLog "  - Server PID: $ServerPID" "DEBUG"
+        if (![string]::IsNullOrWhiteSpace($ServerExePath)) {
+            Write-WrapperLog "  - Server Path: $ServerExePath" "DEBUG"
+        }
+        Write-WrapperLog "  - PID File: scum_server.pid" "DEBUG"
+        Write-WrapperLog "  - SCUM Log Path: $SCUMLogPath" "DEBUG"
+
+        Write-WrapperLog "Step 3: Starting watchdog process..." "DEBUG"
+        $watchdogPsi = New-Object System.Diagnostics.ProcessStartInfo
+        $watchdogPsi.FileName = "pwsh.exe"
+        $watchdogPsi.Arguments = $watchdogArgs -join " "
+        $watchdogPsi.UseShellExecute = $false
+        $watchdogPsi.CreateNoWindow = $true
+        $watchdogPsi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+
+        $watchdogStartTime = Get-Date
+        $watchdogProcess = [System.Diagnostics.Process]::Start($watchdogPsi)
+        $watchdogStartDuration = ((Get-Date) - $watchdogStartTime).TotalMilliseconds
+
+        if ($null -eq $watchdogProcess) {
+            Write-WrapperLog "  x ERROR: Failed to start watchdog process" "ERROR"
+            Write-WrapperLog "  ORPHAN PREVENTION WILL NOT WORK!" "ERROR"
+            return $null
+        }
+
+        Write-WrapperLog "  Watchdog started successfully" "DEBUG"
+        Write-WrapperLog "  - Watchdog PID: $($watchdogProcess.Id)" "DEBUG"
+        Write-WrapperLog "  - Start duration: $([math]::Round($watchdogStartDuration, 0))ms" "DEBUG"
+        Write-WrapperLog "  - Process name: $($watchdogProcess.ProcessName)" "DEBUG"
+
+        Write-WrapperLog "Step 4: Waiting for watchdog initialization..." "DEBUG"
+        Start-Sleep -Milliseconds 500
+
+        try {
+            $watchdogProcess.Refresh()
+            if (!$watchdogProcess.HasExited) {
+                Write-WrapperLog "  Watchdog confirmed running" "DEBUG"
+                Write-WrapperLog "=================================================="
+                Write-WrapperLog "ORPHAN PREVENTION ACTIVE" "DEBUG"
+                Write-WrapperLog "  Watchdog will clean up server if wrapper dies unexpectedly"
+                Write-WrapperLog "  This protects against Abort button during startup"
+                Write-WrapperLog "=================================================="
+            }
+            else {
+                Write-WrapperLog "  x WARNING: Watchdog exited immediately!" "ERROR"
+                Write-WrapperLog "  Exit code: $($watchdogProcess.ExitCode)" "ERROR"
+                Write-WrapperLog "  Check watchdog log for errors" "ERROR"
+            }
+        }
+        catch {
+            Write-WrapperLog "  x WARNING: Could not verify watchdog status: $_" "WARNING"
+        }
+
+        return $watchdogProcess
+    }
+    catch {
+        Write-WrapperLog "x EXCEPTION while starting watchdog: $_" "ERROR"
+        Write-WrapperLog "Stack trace: $($_.ScriptStackTrace)" "ERROR"
+        Write-WrapperLog "ORPHAN PREVENTION WILL NOT WORK!" "ERROR"
+        return $null
+    }
+    finally {
+        Write-WrapperLog "=================================================="
+    }
+}
+
+# ============================================================================
 # SERVER STARTUP
 # ============================================================================
 
@@ -765,9 +1233,22 @@ if (!(Test-Path $ExePath)) {
     exit 1
 }
 
-$argString = $ScriptArgs -join " "
+# Server is at: {InstanceRoot}\scum\3792580\SCUM\Binaries\Win64\SCUMServer.exe
+# Log is at:    {InstanceRoot}\scum\3792580\SCUM\Saved\Logs\SCUM.log
+$serverRoot = Join-Path $instanceRoot "scum\3792580\SCUM"
+$global:ServerLogPath = Join-Path $serverRoot "Saved\Logs\SCUM.log"
+
+$launchOptions = Resolve-SCUMLaunchOptions -RawArgs $ScriptArgs
+$serverArgs = $launchOptions.ServerArgs
+$argString = Format-ArgumentListForLog -Arguments $serverArgs
 Write-WrapperLog "Executable: $ExePath"
 Write-WrapperLog "Arguments: $argString"
+Write-WrapperLog "ForceBindIP Enabled: $($launchOptions.ForceBindIPEnabled)"
+if ($launchOptions.ForceBindIPEnabled) {
+    Write-WrapperLog "ForceBindIP Bind Address/GUID: $($launchOptions.ForceBindIPBindAddress)"
+    Write-WrapperLog "ForceBindIP Path: $($launchOptions.ForceBindIPPath)" "DEBUG"
+    Write-WrapperLog "ForceBindIP Delayed Injection (-i): $($launchOptions.ForceBindIPDelayedInjection)" "DEBUG"
+}
 Write-WrapperLog "--------------------------------------------------"
 
 try {
@@ -778,16 +1259,27 @@ try {
     # Used to distinguish between ABORT (before ready) and GRACEFUL STOP (after ready)
     $script:serverReady = $false
     Write-WrapperLog "Server ready flag initialized: false" "DEBUG"
+
+    $watchdogProcess = $null
+    if ($launchOptions.ForceBindIPEnabled) {
+        Write-WrapperLog "Starting watchdog before ForceBindIP launch so Abort is covered while server PID is being discovered" "DEBUG"
+        $watchdogProcess = Start-SCUMExternalWatchdog -ServerPID 0 -SCUMLogPath $global:ServerLogPath -ServerExePath $ExePath
+    }
     
-    # Configure process start info
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $ExePath
-    $psi.Arguments = $argString
-    $psi.UseShellExecute = $false  # Direct process creation
-    $psi.CreateNoWindow = $false   # Allow console window
-    
-    # Start the server process
-    $process = [System.Diagnostics.Process]::Start($psi)
+    # Start the server process, either directly or via ForceBindIP64.exe.
+    # When ForceBindIP is used, track the real SCUMServer.exe process rather
+    # than the short-lived ForceBindIP loader.
+    if ($launchOptions.ForceBindIPEnabled) {
+        $process = Start-ForceBindIPSCUMServer `
+            -ServerExePath $ExePath `
+            -ServerArgs $serverArgs `
+            -ForceBindIPPath $launchOptions.ForceBindIPPath `
+            -BindAddress $launchOptions.ForceBindIPBindAddress `
+            -DelayedInjection $launchOptions.ForceBindIPDelayedInjection
+    }
+    else {
+        $process = Start-DirectSCUMServer -ServerExePath $ExePath -ServerArgs $serverArgs
+    }
     
     if ($null -eq $process) {
         Write-WrapperLog "ERROR: Failed to start process" "ERROR"
@@ -796,128 +1288,18 @@ try {
 
     # CRITICAL: Store process in global variable for trap handler
     $global:ServerProcess = $process
-    
-    # Calculate and store SCUM log path for trap handler
-    # Server is at: {InstanceRoot}\scum\3792580\SCUM\Binaries\Win64\SCUMServer.exe
-    # Log is at:    {InstanceRoot}\scum\3792580\SCUM\Saved\Logs\SCUM.log
-    $serverRoot = Join-Path $instanceRoot "scum\3792580\SCUM"
-    $global:ServerLogPath = Join-Path $serverRoot "Saved\Logs\SCUM.log"
 
     Write-WrapperLog "Server started successfully"
     Write-WrapperLog "SCUM Server PID: $($process.Id)"
     Write-WrapperLog "Wrapper PID: $PID" "DEBUG"
     Write-WrapperLog "SCUM Log Path: $global:ServerLogPath" "DEBUG"
-    
-    # ========================================================================
-    # CRITICAL: START EXTERNAL WATCHDOG (ORPHAN PREVENTION)
-    # ========================================================================
-    
-    <#
-    .DESCRIPTION
-        The watchdog is a separate PowerShell process that monitors the wrapper.
-        If the wrapper dies (killed by AMP during Abort), the watchdog immediately
-        kills the SCUMServer.exe process.
-        
-        This solves the fundamental problem:
-        - AMP sends WM_EXIT to wrapper
-        - Wrapper dies before trap can execute
-        - Watchdog survives and kills server
-        
-        The watchdog runs completely independently and will continue even if
-        the wrapper is force-killed.
-    #>
-    
-    Write-WrapperLog "=================================================="
-    Write-WrapperLog "STARTING EXTERNAL WATCHDOG (Orphan Prevention)"
-    Write-WrapperLog "=================================================="
-    
-    try {
-        $watchdogScript = Join-Path $PSScriptRoot "SCUMWatchdog.ps1"
-        
-        Write-WrapperLog "Step 1: Locating watchdog script..." "DEBUG"
-        Write-WrapperLog "  - Script path: $watchdogScript" "DEBUG"
-        
-        if (!(Test-Path $watchdogScript)) {
-            Write-WrapperLog "  ✗ ERROR: Watchdog script not found!" "ERROR"
-            Write-WrapperLog "  Expected location: $watchdogScript" "ERROR"
-            Write-WrapperLog "  ORPHAN PREVENTION WILL NOT WORK!" "ERROR"
-            Write-WrapperLog "  Server may become orphaned if wrapper is killed during startup" "ERROR"
-        }
-        else {
-            Write-WrapperLog "  ✓ Watchdog script found" "DEBUG"
-            
-            Write-WrapperLog "Step 2: Preparing watchdog arguments..." "DEBUG"
-            # Start watchdog as a separate process (hidden window)
-            $watchdogArgs = @(
-                "-ExecutionPolicy", "Bypass",
-                "-File", "`"$watchdogScript`"",
-                "-WrapperPID", $PID,
-                "-ServerPID", $process.Id,
-                "-PIDFile", "`"scum_server.pid`"",
-                "-SCUMLogPath", "`"$global:ServerLogPath`""
-            )
-            
-            Write-WrapperLog "  - Wrapper PID: $PID" "DEBUG"
-            Write-WrapperLog "  - Server PID: $($process.Id)" "DEBUG"
-            Write-WrapperLog "  - PID File: scum_server.pid" "DEBUG"
-            Write-WrapperLog "  - SCUM Log Path: $global:ServerLogPath" "DEBUG"
-            
-            Write-WrapperLog "Step 3: Starting watchdog process..." "DEBUG"
-            $watchdogPsi = New-Object System.Diagnostics.ProcessStartInfo
-            $watchdogPsi.FileName = "pwsh.exe"
-            $watchdogPsi.Arguments = $watchdogArgs -join " "
-            $watchdogPsi.UseShellExecute = $false
-            $watchdogPsi.CreateNoWindow = $true  # Run hidden
-            $watchdogPsi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-            
-            $watchdogStartTime = Get-Date
-            $watchdogProcess = [System.Diagnostics.Process]::Start($watchdogPsi)
-            $watchdogStartDuration = ((Get-Date) - $watchdogStartTime).TotalMilliseconds
-            
-            if ($null -ne $watchdogProcess) {
-                Write-WrapperLog "  ✓ Watchdog started successfully" "DEBUG"
-                Write-WrapperLog "  - Watchdog PID: $($watchdogProcess.Id)" "DEBUG"
-                Write-WrapperLog "  - Start duration: $([math]::Round($watchdogStartDuration, 0))ms" "DEBUG"
-                Write-WrapperLog "  - Process name: $($watchdogProcess.ProcessName)" "DEBUG"
-                
-                # Give watchdog time to initialize
-                Write-WrapperLog "Step 4: Waiting for watchdog initialization..." "DEBUG"
-                Start-Sleep -Milliseconds 500
-                
-                # Verify watchdog is still running
-                try {
-                    $watchdogProcess.Refresh()
-                    if (!$watchdogProcess.HasExited) {
-                        Write-WrapperLog "  ✓ Watchdog confirmed running" "DEBUG"
-                        Write-WrapperLog "=================================================="
-                        Write-WrapperLog "ORPHAN PREVENTION ACTIVE" "DEBUG"
-                        Write-WrapperLog "  Watchdog will kill server if wrapper dies unexpectedly"
-                        Write-WrapperLog "  This protects against Abort button during startup"
-                        Write-WrapperLog "=================================================="
-                    }
-                    else {
-                        Write-WrapperLog "  ✗ WARNING: Watchdog exited immediately!" "ERROR"
-                        Write-WrapperLog "  Exit code: $($watchdogProcess.ExitCode)" "ERROR"
-                        Write-WrapperLog "  Check watchdog log for errors" "ERROR"
-                    }
-                }
-                catch {
-                    Write-WrapperLog "  ✗ WARNING: Could not verify watchdog status: $_" "WARNING"
-                }
-            }
-            else {
-                Write-WrapperLog "  ✗ ERROR: Failed to start watchdog process" "ERROR"
-                Write-WrapperLog "  ORPHAN PREVENTION WILL NOT WORK!" "ERROR"
-            }
-        }
+
+    if ($launchOptions.ForceBindIPEnabled) {
+        Write-WrapperLog "Watchdog already running in path-discovery mode for ForceBindIP" "DEBUG"
     }
-    catch {
-        Write-WrapperLog "✗ EXCEPTION while starting watchdog: $_" "ERROR"
-        Write-WrapperLog "Stack trace: $($_.ScriptStackTrace)" "ERROR"
-        Write-WrapperLog "ORPHAN PREVENTION WILL NOT WORK!" "ERROR"
+    else {
+        $watchdogProcess = Start-SCUMExternalWatchdog -ServerPID $process.Id -SCUMLogPath $global:ServerLogPath -ServerExePath $ExePath
     }
-    
-    Write-WrapperLog "=================================================="
     
     # Update PID file with server PID
     try {

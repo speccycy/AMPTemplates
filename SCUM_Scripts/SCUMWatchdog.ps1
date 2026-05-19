@@ -42,7 +42,10 @@ param(
     [string]$PIDFile,
     
     [Parameter(Mandatory=$true)]
-    [string]$SCUMLogPath
+    [string]$SCUMLogPath,
+
+    [Parameter(Mandatory=$false)]
+    [string]$ServerExePath = ""
 )
 
 # ============================================================================
@@ -60,6 +63,10 @@ Set-Variable -Name GRACE_PERIOD_MS -Value 500 -Option Constant
 Set-Variable -Name GRACEFUL_SHUTDOWN_TIMEOUT -Value 30 -Option Constant
     # Maximum wait time for LogExit pattern during graceful shutdown
     # Full 30 seconds for proper graceful shutdown
+
+Set-Variable -Name SERVER_DISCOVERY_TIMEOUT -Value 30 -Option Constant
+    # Maximum wait time to discover SCUMServer.exe when the wrapper started
+    # ForceBindIP but died before it could resolve the final server PID
 
 # ============================================================================
 # LOGGING
@@ -93,6 +100,73 @@ function Write-WatchdogLog {
     }
 }
 
+function Get-ServerProcessByExecutablePath {
+    param([string]$ExpectedExePath)
+
+    if ([string]::IsNullOrWhiteSpace($ExpectedExePath)) {
+        return $null
+    }
+
+    $resolvedExpectedPath = try {
+        (Resolve-Path -LiteralPath $ExpectedExePath -ErrorAction Stop).ProviderPath
+    }
+    catch {
+        $ExpectedExePath
+    }
+
+    try {
+        $candidates = Get-CimInstance Win32_Process -Filter "Name = 'SCUMServer.exe'" -ErrorAction Stop
+        foreach ($candidate in $candidates) {
+            if ([string]::IsNullOrWhiteSpace($candidate.ExecutablePath)) {
+                continue
+            }
+
+            if (![string]::Equals($candidate.ExecutablePath, $resolvedExpectedPath, [StringComparison]::OrdinalIgnoreCase)) {
+                continue
+            }
+
+            $process = Get-Process -Id ([int]$candidate.ProcessId) -ErrorAction SilentlyContinue
+            if ($process -and $process.ProcessName -eq "SCUMServer") {
+                return $process
+            }
+        }
+    }
+    catch {
+        $fallbackCandidates = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
+        foreach ($candidate in $fallbackCandidates) {
+            try {
+                if ([string]::Equals($candidate.Path, $resolvedExpectedPath, [StringComparison]::OrdinalIgnoreCase)) {
+                    return $candidate
+                }
+            }
+            catch {
+                # Some process properties may be inaccessible under restricted accounts.
+            }
+        }
+    }
+
+    return $null
+}
+
+function Wait-ServerProcessByExecutablePath {
+    param(
+        [string]$ExpectedExePath,
+        [int]$TimeoutSeconds
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $process = Get-ServerProcessByExecutablePath -ExpectedExePath $ExpectedExePath
+        if ($process) {
+            return $process
+        }
+
+        Start-Sleep -Milliseconds 250
+    }
+
+    return $null
+}
+
 # ============================================================================
 # MAIN WATCHDOG LOGIC
 # ============================================================================
@@ -103,6 +177,9 @@ Write-WatchdogLog "=================================================="
 Write-WatchdogLog "Watchdog PID: $PID"
 Write-WatchdogLog "Parent Wrapper PID: $WrapperPID"
 Write-WatchdogLog "Target Server PID: $ServerPID"
+if (![string]::IsNullOrWhiteSpace($ServerExePath)) {
+    Write-WatchdogLog "Target Server Path: $ServerExePath"
+}
 Write-WatchdogLog "PID File Path: $PIDFile"
 Write-WatchdogLog "SCUM Log Path: $SCUMLogPath"
 Write-WatchdogLog "Check Interval: ${CHECK_INTERVAL_MS}ms"
@@ -123,18 +200,30 @@ catch {
     exit 1
 }
 
-# Verify server exists at startup
+# Verify server exists at startup, or prepare path-based discovery for ForceBindIP.
 Write-WatchdogLog "Step 2: Verifying server process exists..." "DEBUG"
-try {
-    $server = Get-Process -Id $ServerPID -ErrorAction Stop
-    Write-WatchdogLog "✓ Server process found: $($server.ProcessName) (PID: $ServerPID)" "DEBUG"
-    Write-WatchdogLog "  - Start Time: $($server.StartTime)" "DEBUG"
-    Write-WatchdogLog "  - Working Set: $([math]::Round($server.WorkingSet64 / 1MB, 2)) MB" "DEBUG"
-    Write-WatchdogLog "  - Command Line: $($server.Path)" "DEBUG"
+$server = $null
+if ($ServerPID -gt 0) {
+    try {
+        $server = Get-Process -Id $ServerPID -ErrorAction Stop
+        Write-WatchdogLog "✓ Server process found: $($server.ProcessName) (PID: $ServerPID)" "DEBUG"
+        Write-WatchdogLog "  - Start Time: $($server.StartTime)" "DEBUG"
+        Write-WatchdogLog "  - Working Set: $([math]::Round($server.WorkingSet64 / 1MB, 2)) MB" "DEBUG"
+        Write-WatchdogLog "  - Command Line: $($server.Path)" "DEBUG"
+    }
+    catch {
+        Write-WatchdogLog "✗ ERROR: Server PID $ServerPID not found at startup!" "ERROR"
+        Write-WatchdogLog "  Watchdog cannot function without server - exiting" "ERROR"
+        exit 1
+    }
 }
-catch {
-    Write-WatchdogLog "✗ ERROR: Server PID $ServerPID not found at startup!" "ERROR"
-    Write-WatchdogLog "  Watchdog cannot function without server - exiting" "ERROR"
+elseif (![string]::IsNullOrWhiteSpace($ServerExePath)) {
+    Write-WatchdogLog "Server PID is not known yet; using path-based discovery for ForceBindIP startup" "DEBUG"
+    Write-WatchdogLog "  - Server path: $ServerExePath" "DEBUG"
+}
+else {
+    Write-WatchdogLog "✗ ERROR: Server PID not provided and ServerExePath is empty!" "ERROR"
+    Write-WatchdogLog "  Watchdog cannot discover the server - exiting" "ERROR"
     exit 1
 }
 
@@ -142,6 +231,9 @@ Write-WatchdogLog "=================================================="
 Write-WatchdogLog "Step 3: Starting monitoring loop..."
 Write-WatchdogLog "  Watchdog will check every ${CHECK_INTERVAL_MS}ms if wrapper is alive"
 Write-WatchdogLog "  If wrapper dies, watchdog will kill server after ${GRACE_PERIOD_MS}ms grace period"
+if ($ServerPID -le 0) {
+    Write-WatchdogLog "  Server PID will be discovered from ServerExePath when ForceBindIP spawns it"
+}
 Write-WatchdogLog "=================================================="
 
 # ============================================================================
@@ -168,10 +260,15 @@ while ($true) {
         $lastDetailedCheck = $now
         try {
             $wrapper.Refresh()
-            $server.Refresh()
             Write-WatchdogLog "Detailed Status Check:" "DEBUG"
             Write-WatchdogLog "  - Wrapper: Alive, CPU: $([math]::Round($wrapper.TotalProcessorTime.TotalSeconds, 2))s, Memory: $([math]::Round($wrapper.WorkingSet64 / 1MB, 2)) MB" "DEBUG"
-            Write-WatchdogLog "  - Server: Alive, CPU: $([math]::Round($server.TotalProcessorTime.TotalSeconds, 2))s, Memory: $([math]::Round($server.WorkingSet64 / 1MB, 2)) MB" "DEBUG"
+            if ($server) {
+                $server.Refresh()
+                Write-WatchdogLog "  - Server: Alive, CPU: $([math]::Round($server.TotalProcessorTime.TotalSeconds, 2))s, Memory: $([math]::Round($server.WorkingSet64 / 1MB, 2)) MB" "DEBUG"
+            }
+            else {
+                Write-WatchdogLog "  - Server: PID not discovered yet" "DEBUG"
+            }
         }
         catch {
             # Process might have exited, will be caught in main checks below
@@ -205,6 +302,18 @@ while ($true) {
     # ========================================================================
     # CHECK 2: Is server still alive?
     # ========================================================================
+
+    if ($ServerPID -le 0 -and ![string]::IsNullOrWhiteSpace($ServerExePath)) {
+        $discoveredServer = Get-ServerProcessByExecutablePath -ExpectedExePath $ServerExePath
+        if ($discoveredServer) {
+            $server = $discoveredServer
+            $ServerPID = $server.Id
+            Write-WatchdogLog "✓ Discovered SCUMServer.exe spawned by ForceBindIP (PID: $ServerPID)" "DEBUG"
+        }
+        else {
+            continue
+        }
+    }
     
     $serverAlive = $false
     try {
@@ -213,9 +322,18 @@ while ($true) {
     }
     catch {
         # Server died on its own (normal exit)
+        $runtime = 0
+        if ($server) {
+            try {
+                $runtime = ($now - $server.StartTime).TotalSeconds
+            }
+            catch {
+                $runtime = 0
+            }
+        }
         Write-WatchdogLog "=================================================="
         Write-WatchdogLog "Server process exited normally (PID: $ServerPID)" "DEBUG"
-        Write-WatchdogLog "  - Server was running for: $([math]::Round(($now - $server.StartTime).TotalSeconds, 2))s" "DEBUG"
+        Write-WatchdogLog "  - Server was running for: $([math]::Round($runtime, 2))s" "DEBUG"
         Write-WatchdogLog "  - Watchdog no longer needed - exiting" "DEBUG"
         Write-WatchdogLog "=================================================="
         break
@@ -234,16 +352,31 @@ Write-WatchdogLog "=================================================="
 Write-WatchdogLog "Step 1: Grace period - waiting ${GRACE_PERIOD_MS}ms..." "DEBUG"
 Start-Sleep -Milliseconds $GRACE_PERIOD_MS
 
+if ($ServerPID -le 0 -and ![string]::IsNullOrWhiteSpace($ServerExePath)) {
+    Write-WatchdogLog "Step 2: Server PID unknown - waiting up to ${SERVER_DISCOVERY_TIMEOUT}s for ForceBindIP-spawned SCUMServer.exe..." "DEBUG"
+    $discoveredServer = Wait-ServerProcessByExecutablePath -ExpectedExePath $ServerExePath -TimeoutSeconds $SERVER_DISCOVERY_TIMEOUT
+    if ($discoveredServer) {
+        $server = $discoveredServer
+        $ServerPID = $server.Id
+        Write-WatchdogLog "  ✓ Discovered SCUMServer.exe after wrapper death (PID: $ServerPID)" "WARNING"
+    }
+    else {
+        Write-WatchdogLog "  - No SCUMServer.exe appeared for this instance path" "DEBUG"
+    }
+}
+
 # Check if server is still alive after grace period
-Write-WatchdogLog "Step 2: Checking if server is still alive..." "DEBUG"
+Write-WatchdogLog "Step 3: Checking if server is still alive..." "DEBUG"
 $serverStillAlive = $false
 try {
-    $server = Get-Process -Id $ServerPID -ErrorAction Stop
-    $serverStillAlive = $true
-    $serverUptime = (Get-Date) - $server.StartTime
-    Write-WatchdogLog "  - Server is STILL ALIVE (PID: $ServerPID)" "WARNING"
-    Write-WatchdogLog "  - Server uptime: $([math]::Round($serverUptime.TotalSeconds, 2))s" "WARNING"
-    Write-WatchdogLog "  - Memory usage: $([math]::Round($server.WorkingSet64 / 1MB, 2)) MB" "WARNING"
+    if ($ServerPID -gt 0) {
+        $server = Get-Process -Id $ServerPID -ErrorAction Stop
+        $serverStillAlive = $true
+        $serverUptime = (Get-Date) - $server.StartTime
+        Write-WatchdogLog "  - Server is STILL ALIVE (PID: $ServerPID)" "WARNING"
+        Write-WatchdogLog "  - Server uptime: $([math]::Round($serverUptime.TotalSeconds, 2))s" "WARNING"
+        Write-WatchdogLog "  - Memory usage: $([math]::Round($server.WorkingSet64 / 1MB, 2)) MB" "WARNING"
+    }
 }
 catch {
     Write-WatchdogLog "  - Server already terminated" "DEBUG"
@@ -400,7 +533,7 @@ public static extern bool SetConsoleCtrlHandler(IntPtr HandlerRoutine, bool Add)
         }
         else {
             # Ctrl+C failed - force kill
-            Write-WrapperLog "  ✗ Ctrl+C failed - force killing..." "ERROR"
+            Write-WatchdogLog "  ✗ Ctrl+C failed - force killing..." "ERROR"
             Stop-Process -Id $ServerPID -Force
             Write-WatchdogLog "  ✓ Server force killed (Ctrl+C failed)" "WARNING"
         }

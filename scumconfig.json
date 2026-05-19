@@ -56,6 +56,62 @@
         }
     },
     {
+        "DisplayName": "Enable ForceBindIP (Windows)",
+        "Category": "SCUM:stadia_controller",
+        "Subcategory": "Network Binding:lan:2",
+        "Description": "Launches SCUMServer.exe through ForceBindIP64.exe so SCUM can bind to a specific local IPv4 address or interface GUID. Requires ForceBindIP 1.3+ installed on the Windows host. ForceBindIP injects a DLL into the server process, so use with care when BattlEye is enabled.",
+        "Keywords": "forcebindip,bind,ip,interface,guid,multihome,windows",
+        "FieldName": "forcebindip",
+        "InputType": "checkbox",
+        "ParamFieldName": "forcebindip",
+        "DefaultValue": "",
+        "EnumValues": {
+            "False": "",
+            "True": "-AMPForceBindIPEnabled "
+        }
+    },
+    {
+        "DisplayName": "ForceBindIP64 Path",
+        "Category": "SCUM:stadia_controller",
+        "Subcategory": "Network Binding:lan:2",
+        "Description": "Full path to ForceBindIP64.exe. SCUMServer.exe is 64-bit, so use ForceBindIP64.exe and keep BindIP.dll in the same folder.",
+        "Keywords": "forcebindip,path,exe,bindip,dll",
+        "FieldName": "ForceBindIPPath",
+        "InputType": "text",
+        "ParamFieldName": "ForceBindIPPath",
+        "DefaultValue": "C:\\Program Files (x86)\\ForceBindIP\\ForceBindIP64.exe",
+        "Placeholder": "C:\\Program Files (x86)\\ForceBindIP\\ForceBindIP64.exe",
+        "EnumValues": {}
+    },
+    {
+        "DisplayName": "ForceBindIP Bind Address / GUID",
+        "Category": "SCUM:stadia_controller",
+        "Subcategory": "Network Binding:lan:2",
+        "Description": "IPv4 address or Windows network interface GUID to pass to ForceBindIP. Examples: 203.0.113.10 or {4FA65F75-7A5F-4BCA-A3A2-59824B2F5CA0}. Required when ForceBindIP is enabled.",
+        "Keywords": "forcebindip,ip,address,guid,interface,bind",
+        "FieldName": "ForceBindIPBindAddress",
+        "InputType": "text",
+        "ParamFieldName": "ForceBindIPBindAddress",
+        "DefaultValue": "",
+        "Placeholder": "203.0.113.10",
+        "EnumValues": {}
+    },
+    {
+        "DisplayName": "ForceBindIP Delayed Injection",
+        "Category": "SCUM:stadia_controller",
+        "Subcategory": "Network Binding:lan:2",
+        "Description": "Adds ForceBindIP's -i option. Use this only if SCUMServer.exe crashes or behaves unexpectedly at startup; network activity before injection may not be bound.",
+        "Keywords": "forcebindip,delayed,injection,startup,crash",
+        "FieldName": "forcebindipdelay",
+        "InputType": "checkbox",
+        "ParamFieldName": "forcebindipdelay",
+        "DefaultValue": "",
+        "EnumValues": {
+            "False": "",
+            "True": "-AMPForceBindIPDelayedInjection "
+        }
+    },
+    {
         "DisplayName": "Additional Server Arguments",
         "Category": "SCUM:stadia_controller",
         "Subcategory": "Server:dns:1",
