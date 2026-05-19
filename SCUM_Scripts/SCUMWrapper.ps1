@@ -46,7 +46,7 @@
     Purpose:        Ensure data integrity and prevent database corruption
     Requirements:   PowerShell 7.0+, Windows Server
     
-    CRITICAL: This wrapper must be configured in scum.kvp with:
+    CRITICAL: This wrapper must be configured in scum-infh.kvp with:
     - App.ExitMethod=OS_CLOSE
     - App.ExitTimeout=35
 
