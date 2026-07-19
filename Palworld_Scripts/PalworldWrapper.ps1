@@ -95,60 +95,140 @@ function Start-NativeProcess {
     return $process
 }
 
-function Get-PalworldProcessIds {
-    param(
-        [Parameter(Mandatory)]
-        [string]$ExecutablePath
-    )
+function Convert-CimDateTime {
+    param($Value)
 
-    $matchingIds = [System.Collections.Generic.List[int]]::new()
-    $processes = Get-CimInstance Win32_Process -Filter "Name='PalServer-Win64-Shipping-Cmd.exe'" -ErrorAction SilentlyContinue
+    if ($Value -is [datetime]) {
+        return $Value
+    }
 
-    foreach ($candidate in $processes) {
-        if ([string]::IsNullOrWhiteSpace([string]$candidate.ExecutablePath)) {
-            continue
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return [datetime]::MinValue
+    }
+
+    try {
+        return [System.Management.ManagementDateTimeConverter]::ToDateTime([string]$Value)
+    }
+    catch {
+        try {
+            return [datetime]$Value
         }
+        catch {
+            return [datetime]::MinValue
+        }
+    }
+}
 
-        if ([string]::Equals(
-            [System.IO.Path]::GetFullPath([string]$candidate.ExecutablePath),
-            $ExecutablePath,
-            [System.StringComparison]::OrdinalIgnoreCase
-        )) {
-            [void]$matchingIds.Add([int]$candidate.ProcessId)
+function Get-PalworldServerProcessesByExecutable {
+    param([string]$ExpectedExePath)
+
+    $resolvedExpectedPath = try {
+        (Resolve-Path -LiteralPath $ExpectedExePath -ErrorAction Stop).ProviderPath
+    }
+    catch {
+        $ExpectedExePath
+    }
+
+    $matchedProcesses = @()
+
+    try {
+        $candidates = Get-CimInstance Win32_Process -Filter "Name = 'PalServer-Win64-Shipping-Cmd.exe'" -ErrorAction Stop
+        foreach ($candidate in $candidates) {
+            if ([string]::IsNullOrWhiteSpace([string]$candidate.ExecutablePath)) {
+                continue
+            }
+
+            if (![string]::Equals(
+                [string]$candidate.ExecutablePath,
+                $resolvedExpectedPath,
+                [System.StringComparison]::OrdinalIgnoreCase
+            )) {
+                continue
+            }
+
+            $matchedProcesses += [pscustomobject]@{
+                Id           = [int]$candidate.ProcessId
+                CreationDate = Convert-CimDateTime $candidate.CreationDate
+            }
+        }
+    }
+    catch {
+        Write-Warning "[PALWORLD-WRAPPER] CIM process lookup failed: $_"
+        $fallbackCandidates = Get-Process -Name "PalServer-Win64-Shipping-Cmd" -ErrorAction SilentlyContinue
+
+        foreach ($candidate in $fallbackCandidates) {
+            try {
+                if (![string]::Equals(
+                    [string]$candidate.Path,
+                    $resolvedExpectedPath,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                )) {
+                    continue
+                }
+
+                $matchedProcesses += [pscustomobject]@{
+                    Id           = [int]$candidate.Id
+                    CreationDate = $candidate.StartTime
+                }
+            }
+            catch {
+                # Some process properties may be unavailable to restricted users.
+            }
         }
     }
 
-    return $matchingIds.ToArray()
+    return $matchedProcesses | Sort-Object CreationDate -Descending
 }
 
 function Wait-ForForceBindIPServer {
     param(
-        [Parameter(Mandatory)]
-        [string]$ExecutablePath,
-
-        [Parameter(Mandatory)]
-        [int[]]$ExistingProcessIds,
-
-        [Parameter(Mandatory)]
+        [string]$ExpectedExePath,
+        [int[]]$ExcludedPids,
+        [datetime]$LaunchTime,
         [System.Diagnostics.Process]$LauncherProcess,
-
         [int]$TimeoutSeconds = 30
     )
 
+    # @() deliberately accepts the normal case where no Palworld process
+    # existed before launch. This mirrors the working SCUM wrapper.
+    $excluded = @($ExcludedPids)
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $reportedLauncherExit = $false
 
     while ((Get-Date) -lt $deadline) {
-        foreach ($processId in (Get-PalworldProcessIds -ExecutablePath $ExecutablePath)) {
-            if ($processId -notin $ExistingProcessIds) {
-                return Get-Process -Id $processId -ErrorAction Stop
+        $candidates = Get-PalworldServerProcessesByExecutable -ExpectedExePath $ExpectedExePath
+
+        foreach ($candidate in @($candidates)) {
+            if ($excluded -contains [int]$candidate.Id) {
+                continue
+            }
+
+            if (
+                $candidate.CreationDate -ne [datetime]::MinValue -and
+                $candidate.CreationDate -lt $LaunchTime.AddSeconds(-5)
+            ) {
+                continue
+            }
+
+            $serverProcess = Get-Process -Id $candidate.Id -ErrorAction SilentlyContinue
+            if ($serverProcess) {
+                return $serverProcess
             }
         }
 
-        if ($LauncherProcess.HasExited -and $LauncherProcess.ExitCode -ne 0) {
-            throw "ForceBindIP64.exe exited with code $($LauncherProcess.ExitCode) before Palworld started."
+        if ($LauncherProcess) {
+            $LauncherProcess.Refresh()
+            if ($LauncherProcess.HasExited -and !$reportedLauncherExit) {
+                $reportedLauncherExit = $true
+                Write-Host "[PALWORLD-WRAPPER] ForceBindIP loader exited with code $($LauncherProcess.ExitCode)."
+
+                if ($LauncherProcess.ExitCode -ne 0) {
+                    throw "ForceBindIP64.exe exited with code $($LauncherProcess.ExitCode) before Palworld started."
+                }
+            }
         }
 
-        Start-Sleep -Milliseconds 200
+        Start-Sleep -Milliseconds 250
     }
 
     throw "Timed out waiting $TimeoutSeconds seconds for ForceBindIP to start Palworld."
@@ -178,7 +258,10 @@ try {
             throw "BindIP.dll was not found beside ForceBindIP64.exe: $bindIpDll"
         }
 
-        $existingProcessIds = @(Get-PalworldProcessIds -ExecutablePath $serverExecutable)
+        $existingProcessIds = @(
+            (Get-PalworldServerProcessesByExecutable -ExpectedExePath $serverExecutable) |
+                ForEach-Object { [int]$_.Id }
+        )
         $forceBindArguments = [System.Collections.Generic.List[string]]::new()
 
         if ($ForceBindIPDelayedInjection) {
@@ -195,8 +278,9 @@ try {
         Write-Host "[PALWORLD-WRAPPER] Bind target: $ForceBindIPBindAddress"
         Write-Host "[PALWORLD-WRAPPER] Delayed injection: $ForceBindIPDelayedInjection"
 
+        $launchTime = Get-Date
         $launcherProcess = Start-NativeProcess -FilePath $ForceBindIPPath -WorkingDirectory $serverWorkingDirectory -ArgumentList $forceBindArguments.ToArray()
-        $serverProcess = Wait-ForForceBindIPServer -ExecutablePath $serverExecutable -ExistingProcessIds $existingProcessIds -LauncherProcess $launcherProcess
+        $serverProcess = Wait-ForForceBindIPServer -ExpectedExePath $serverExecutable -ExcludedPids $existingProcessIds -LaunchTime $launchTime -LauncherProcess $launcherProcess
 
         Write-Host "[PALWORLD-WRAPPER] Palworld process detected (PID $($serverProcess.Id))."
     }
