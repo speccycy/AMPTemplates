@@ -1,6 +1,6 @@
 Meta.DisplayName=Palworld (Modded)
-Meta.Description=Palworld Dedicated Server with Steam Workshop and legacy Unreal Engine 4/5 Scripting System modding support
-Meta.OS=Windows, Linux
+Meta.Description=Palworld Dedicated Server with Steam Workshop and legacy Unreal Engine 4/5 Scripting System modding support for Windows
+Meta.OS=Windows
 Meta.AarchSupport=Emulated
 Meta.Arch=x86_64
 Meta.Author=Greelan
@@ -22,7 +22,7 @@ Meta.ExtraContainerPackages=[]
 Meta.ConfigReleaseState=NotSpecified
 Meta.NoCommercialUsage=False
 Meta.AppConfigId=f1567fcc-4e3a-453a-8a41-9176bb3c7bef
-Meta.ConfigVersion=27
+Meta.ConfigVersion=28
 Meta.ReleaseNotes=
 Meta.BreakingReleaseNotes=
 Meta.ImportableExtensions=[]
@@ -46,7 +46,8 @@ App.EnvironmentVariables={"LD_LIBRARY_PATH":"{{$FullBaseDir}}linux64:%LD_LIBRARY
 App.CommandLineParameterFormat=-{0}={1}
 App.CommandLineParameterDelimiter= 
 App.ExitMethod=OS_CLOSE
-App.ExitTimeout=30
+App.ExitMethodWindows=None
+App.ExitTimeout=35
 App.ExitString=DoExit
 App.ExitFile=app_exit.lck
 App.RestartDelaySeconds=0
@@ -83,15 +84,17 @@ App.ForceUpdateReason=
 App.Compatibility=None
 App.SteamUpdateAnonymousLogin=NotMods
 App.RapidStartup=False
-App.DumpFullChildProcessTree=True
-App.MonitorChildProcessName=^Z:\\.*PalServer-Win64-Shipping-Cmd.exe.*-Port={{$GamePort}}.*$
+App.DumpFullChildProcessTree=False
+App.MonitorChildProcess=True
+App.MonitorChildProcessName=PalServer-Win64-Shipping-Cmd
+App.MonitorDirectChildOnly=False
 App.SupportsUniversalSleep=False
 App.WakeupMode=Any
-App.ApplicationReadyMode=Immediate
+App.ApplicationReadyMode=RegexMatch
 Console.FilterMatchRegex=(Setting breakpad minidump AppID = 1623730|\[S_API FAIL\] Tried to access Steam interface .* before SteamAPI_Init succeeded\.|Pong)
 Console.FilterMatchReplacement=
 Console.ThrowawayMessageRegex=^(WARNING|ERROR): Shader.+$
-Console.AppReadyRegex=^.*Running Palworld dedicated server on :\d+$
+Console.AppReadyRegex=^\[PALWORLD-WRAPPER\] State: RUNNING - Monitoring Palworld PID \d+$
 Console.UserJoinRegex=^(?:\[[\d-]+ [\d:]+\] \[LOG\] )?(?<username>.+) joined the server\. \(User id: (?<userid>.+?)\)|(?:\[[\d:]+\]\s?\[info\] )?'(?<username>.+)' \(UserId=(?<userid>.+?)(, IP=(?<endpoint>.+?))?\) has logged in\.$
 Console.UserLeaveRegex=^(?:\[[\d-]+ [\d:]+\] \[LOG\] )?(?<username>.+) left the server\. \(User id: (?<userid>.+?)\)|(?:\[[\d:]+\]\s?\[info\] )?'(?<username>.+)' \(UserId=(?<userid>.+?)(, IP=(?<endpoint>.+?))?\) has logged out\.$
 Console.UserChatRegex=^$
