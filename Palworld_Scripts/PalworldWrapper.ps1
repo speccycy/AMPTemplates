@@ -234,7 +234,71 @@ function Wait-ForForceBindIPServer {
     throw "Timed out waiting $TimeoutSeconds seconds for ForceBindIP to start Palworld."
 }
 
+function Stop-OrphanedPalworldProcesses {
+    $orphanedProcesses = @(Get-PalworldServerProcessesByExecutable -ExpectedExePath $serverExecutable)
+
+    foreach ($orphan in $orphanedProcesses) {
+        $orphanProcess = Get-Process -Id $orphan.Id -ErrorAction SilentlyContinue
+        if (-not $orphanProcess) {
+            continue
+        }
+
+        Write-Warning "[PALWORLD-WRAPPER] Removing orphaned Palworld PID $($orphan.Id) from this instance before start."
+        Stop-Process -Id $orphan.Id -Force -ErrorAction Stop
+
+        try {
+            Wait-Process -Id $orphan.Id -Timeout 10 -ErrorAction Stop
+        }
+        catch {
+            if (Get-Process -Id $orphan.Id -ErrorAction SilentlyContinue) {
+                throw "Orphaned Palworld PID $($orphan.Id) could not be terminated."
+            }
+        }
+    }
+}
+
+function Start-PalworldExternalWatchdog {
+    $watchdogScript = Join-Path $PSScriptRoot "PalworldWatchdog.ps1"
+    if (-not (Test-Path -LiteralPath $watchdogScript -PathType Leaf)) {
+        throw "Palworld watchdog script not found: $watchdogScript"
+    }
+
+    $pwshExecutable = (Get-Process -Id $PID -ErrorAction Stop).Path
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $pwshExecutable
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    [void]$startInfo.ArgumentList.Add("-NoLogo")
+    [void]$startInfo.ArgumentList.Add("-NoProfile")
+    [void]$startInfo.ArgumentList.Add("-ExecutionPolicy")
+    [void]$startInfo.ArgumentList.Add("Bypass")
+    [void]$startInfo.ArgumentList.Add("-File")
+    [void]$startInfo.ArgumentList.Add($watchdogScript)
+    [void]$startInfo.ArgumentList.Add("-WrapperPID")
+    [void]$startInfo.ArgumentList.Add([string]$PID)
+    [void]$startInfo.ArgumentList.Add("-ServerExePath")
+    [void]$startInfo.ArgumentList.Add($serverExecutable)
+
+    $watchdog = [System.Diagnostics.Process]::Start($startInfo)
+    if (-not $watchdog) {
+        throw "Failed to start Palworld external watchdog."
+    }
+
+    Start-Sleep -Milliseconds 300
+    $watchdog.Refresh()
+    if ($watchdog.HasExited) {
+        throw "Palworld external watchdog exited during initialization with code $($watchdog.ExitCode)."
+    }
+
+    Write-Host "[PALWORLD-WRAPPER] Orphan watchdog active (PID $($watchdog.Id))."
+    return $watchdog
+}
+
+Stop-OrphanedPalworldProcesses
+
 try {
+    $watchdogProcess = Start-PalworldExternalWatchdog
+
     if (-not $ForceBindIPEnabled) {
         Write-Host "[PALWORLD-WRAPPER] Starting Palworld directly (ForceBindIP disabled)."
         $serverProcess = Start-NativeProcess -FilePath $serverExecutable -WorkingDirectory $serverWorkingDirectory -ArgumentList $ServerArguments.ToArray()
@@ -285,7 +349,20 @@ try {
         Write-Host "[PALWORLD-WRAPPER] Palworld process detected (PID $($serverProcess.Id))."
     }
 
-    $serverProcess.WaitForExit()
+    Write-Host "[PALWORLD-WRAPPER] State: RUNNING - Monitoring Palworld PID $($serverProcess.Id)"
+
+    $lastHeartbeat = Get-Date
+    while (-not $serverProcess.HasExited) {
+        Start-Sleep -Milliseconds 500
+        $serverProcess.Refresh()
+
+        if (((Get-Date) - $lastHeartbeat).TotalSeconds -ge 5) {
+            $lastHeartbeat = Get-Date
+            Write-Host "[PALWORLD-WRAPPER] Heartbeat: Wrapper alive, Palworld PID $($serverProcess.Id) running."
+        }
+    }
+
+    Write-Host "[PALWORLD-WRAPPER] Palworld exited with code $($serverProcess.ExitCode)."
     exit $serverProcess.ExitCode
 }
 catch {
